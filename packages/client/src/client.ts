@@ -115,7 +115,7 @@ export class FigmaClient {
           await this.sleep(Math.min(1000 * 2 ** (attempt - 1), 8000));
         }
 
-        const url = new URL(path, this.baseUrl);
+        const url = new URL(this.baseUrl.replace(/\/$/, "") + "/" + path.replace(/^\//, ""));
         for (const [key, value] of Object.entries(params)) {
           if (value != null) url.searchParams.set(key, String(value));
         }
