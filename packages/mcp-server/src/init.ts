@@ -28,22 +28,19 @@ function getMcpServerCommand(): string {
   }
 }
 
-function mergeSettings(projectRoot: string): void {
-  const settingsDir = path.join(projectRoot, ".claude");
-  const settingsPath = path.join(settingsDir, "settings.json");
+function mergeMcpJson(projectRoot: string): void {
+  const mcpJsonPath = path.join(projectRoot, ".mcp.json");
 
-  mkdirSync(settingsDir, { recursive: true });
-
-  let settings: Record<string, unknown> = {};
-  if (existsSync(settingsPath)) {
+  let mcpJson: Record<string, unknown> = {};
+  if (existsSync(mcpJsonPath)) {
     try {
-      settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+      mcpJson = JSON.parse(readFileSync(mcpJsonPath, "utf-8"));
     } catch {
-      settings = {};
+      mcpJson = {};
     }
   }
 
-  const mcpServers = (settings.mcpServers ?? {}) as Record<string, unknown>;
+  const mcpServers = (mcpJson.mcpServers ?? {}) as Record<string, unknown>;
   const existing = mcpServers["figma-ai-context"] as Record<string, unknown> | undefined;
 
   const serverBin = getMcpServerCommand();
@@ -56,8 +53,8 @@ function mergeSettings(projectRoot: string): void {
     },
   };
 
-  settings.mcpServers = mcpServers;
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf-8");
+  mcpJson.mcpServers = mcpServers;
+  writeFileSync(mcpJsonPath, JSON.stringify(mcpJson, null, 2) + "\n", "utf-8");
 }
 
 function copySkills(projectRoot: string): string[] {
@@ -71,7 +68,7 @@ function copySkills(projectRoot: string): string[] {
     process.exit(1);
   }
 
-  const files = ["gen-component.md", "gen-page.md", "sync-tokens.md"];
+  const files = ["gen-component.md", "gen-page.md", "gen-pixel-perfect.md", "sync-tokens.md"];
 
   for (const file of files) {
     const src = path.join(SKILLS_SOURCE, file);
@@ -110,7 +107,7 @@ figma-ai-init - 安装 Figma AI skills 到当前项目
 
 功能:
   1. 复制 Claude Code skills 到 .claude/commands/figma/
-  2. 配置 MCP server 到 .claude/settings.json
+  2. 配置 MCP server 到 .mcp.json
 `);
     process.exit(0);
   }
@@ -134,14 +131,15 @@ figma-ai-init - 安装 Figma AI skills 到当前项目
   }
 
   if (!skipMcp) {
-    mergeSettings(projectRoot);
-    console.log(`\n已配置 MCP server → .claude/settings.json`);
+    mergeMcpJson(projectRoot);
+    console.log(`\n已配置 MCP server → .mcp.json`);
     console.log(`  请确保设置 FIGMA_TOKEN 环境变量`);
   }
 
   console.log(`\n完成! 在 Claude Code 中使用:`);
   console.log(`  /project:figma/gen-component <figma-url>`);
   console.log(`  /project:figma/gen-page <figma-url>`);
+  console.log(`  /project:figma/gen-pixel-perfect <figma-url>`);
   console.log(`  /project:figma/sync-tokens <figma-url>\n`);
 }
 

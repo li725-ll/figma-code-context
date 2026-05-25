@@ -23,10 +23,14 @@ description: 从 Figma 设计稿生成前端组件，自动检测技术栈、拆
 
 使用 MCP 工具获取设计稿信息：
 
-1. 调用 `get_node` 获取目标节点的结构数据（使用 condensed 格式）
+1. 调用 `get_node` 获取目标节点的结构数据：
+   - 需要像素级还原时使用 `precision: "pixel-perfect"` + `format: "json"`
+   - 快速原型时使用 `format: "condensed"`（默认）
 2. 如果节点是 COMPONENT_SET，调用 `get_component_variants` 获取所有变体和属性组合
 3. 调用 `get_node_css` 获取样式信息（根据项目使用 css 或 tailwind 模式）
 4. 调用 `get_variables` 获取设计 token（如果项目有 token 体系）
+5. 对有 imageRef 的节点调用 `get_images` 获取图片 URL
+6. 对图标/矢量节点调用 `export_svg` 获取 SVG 文件
 
 ## 第三步：确定文件放置位置
 

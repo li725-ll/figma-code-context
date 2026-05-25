@@ -233,11 +233,17 @@ server.registerTool(
         .default("condensed")
         .describe("输出格式：json（完整结构化）或 condensed（压缩文本，默认）"),
       maxTokens: z.number().optional().default(4000).describe("压缩格式的最大 token 预算，默认 4000"),
+      precision: z
+        .enum(["standard", "pixel-perfect"])
+        .optional()
+        .default("standard")
+        .describe("精度模式：standard（默认）或 pixel-perfect（强制 JSON + 完整 CSS 属性，用于像素级还原）"),
     },
   },
-  async ({ fileKey, nodeId, depth, format, maxTokens }) => {
+  async ({ fileKey, nodeId, depth, format, maxTokens, precision }) => {
     try {
       const normalizedId = nodeId.replace(/-/g, ":");
+      const effectiveFormat = precision === "pixel-perfect" ? "json" : format;
       const data = (await figma.getFileNodes(fileKey, [normalizedId])) as any;
       if (!data) return { content: [{ type: "text" as const, text: "获取节点失败" }] };
 
@@ -276,7 +282,7 @@ server.registerTool(
         }
       }
 
-      if (format === "condensed") {
+      if (effectiveFormat === "condensed") {
         let variableMap: Record<string, string> | null = null;
         try {
           const varsData = await figma.getVariables(fileKey);
@@ -322,11 +328,16 @@ server.registerTool(
       tempManager.writeOptimized(fileKey, normalizedId, { summary, tree: simplified, variables });
       logger.logOptimized("get_node", { fileKey, nodeId: normalizedId, format }, { summary, variables });
 
+      let cssSection = "";
+      if (precision === "pixel-perfect") {
+        cssSection = "\n\n# 完整 CSS\n" + nodeToCSSRecursive(nodeData.document, 0);
+      }
+
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({ summary, tree: simplified, variables }, null, 2) + svgSection,
+            text: JSON.stringify({ summary, tree: simplified, variables }, null, 2) + cssSection + svgSection,
           },
         ],
       };
@@ -608,9 +619,14 @@ server.registerTool(
         .default("css")
         .describe("输出模式：css（标准 CSS）或 tailwind（Tailwind 类名）"),
       recursive: z.boolean().optional().default(false).describe("是否递归生成子节点样式，默认 false"),
+      precision: z
+        .enum(["standard", "pixel-perfect"])
+        .optional()
+        .default("standard")
+        .describe("精度模式：pixel-perfect 时输出包含 position、overflow、flex 子属性、text 截断等完整 CSS"),
     },
   },
-  async ({ fileKey, nodeId, mode, recursive }) => {
+  async ({ fileKey, nodeId, mode, recursive, precision }) => {
     try {
       const normalizedId = nodeId.replace(/-/g, ":");
       const data = (await figma.getFileNodes(fileKey, [normalizedId])) as any;

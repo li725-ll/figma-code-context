@@ -22,9 +22,13 @@ description: 从 Figma 页面设计稿生成完整页面，智能拆分组件，
 ## 第二步：获取 Figma 设计数据
 
 1. 调用 `get_page_for_codegen` 一站式获取完整上下文（结构 + token + 组件 + 颜色字体）
-2. 调用 `get_node` 获取详细节点树（condensed 格式，depth 设为 15+）
+2. 调用 `get_node` 获取详细节点树：
+   - 需要像素级还原时使用 `precision: "pixel-perfect"` + `format: "json"` + `depth: 15`
+   - 快速原型时使用 `format: "condensed"`（默认）
 3. 如果页面引用了组件，调用 `get_component_variants` 获取变体信息
 4. 调用 `get_variables` 和 `get_styles` 获取设计系统信息
+5. 对有 imageRef 的节点调用 `get_images` 获取图片 URL
+6. 对图标/矢量节点调用 `export_svg` 获取 SVG 文件
 
 ## 第三步：分析页面复杂度并决定拆分策略
 

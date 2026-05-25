@@ -106,6 +106,26 @@ interface SimplifiedNode {
   cornerRadius?: number | number[];
   layout?: any;
   inferredLayout?: InferredLayout;
+  sizing?: { h?: string; v?: string };
+  position?: "absolute";
+  positionOffset?: { x: number; y: number };
+  flexGrow?: number;
+  minWidth?: number;
+  maxWidth?: number;
+  minHeight?: number;
+  maxHeight?: number;
+  overflow?: string;
+  rotation?: number;
+  blendMode?: string;
+  textTruncation?: string;
+  maxLines?: number;
+  textDecoration?: string;
+  textCase?: string;
+  strokeAlign?: string;
+  individualStrokes?: { top: number; right: number; bottom: number; left: number };
+  strokeDashes?: number[];
+  imageRef?: string;
+  cornerSmoothing?: number;
   text?: string;
   textStyle?: Record<string, any>;
   componentId?: string;
@@ -297,8 +317,24 @@ export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: numbe
     }
   }
 
+  if (node.strokeAlign && node.strokeAlign !== "CENTER") {
+    result.strokeAlign = node.strokeAlign;
+  }
+  if (node.individualStrokeWeights) {
+    const { top, right, bottom, left } = node.individualStrokeWeights;
+    if (top !== right || right !== bottom || bottom !== left) {
+      result.individualStrokes = { top, right, bottom, left };
+    }
+  }
+  if (node.strokeDashes && node.strokeDashes.length > 0) {
+    result.strokeDashes = node.strokeDashes;
+  }
+
   if (node.cornerRadius) {
     result.cornerRadius = node.rectangleCornerRadii || node.cornerRadius;
+  }
+  if (node.cornerSmoothing && node.cornerSmoothing > 0) {
+    result.cornerSmoothing = node.cornerSmoothing;
   }
 
   if (node.layoutMode && node.layoutMode !== "NONE") {
@@ -319,6 +355,66 @@ export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: numbe
     result.inferredLayout = inferredLayout;
   }
 
+  // Sizing mode (FILL/HUG/FIXED)
+  if (node.layoutSizingHorizontal && node.layoutSizingHorizontal !== "FIXED") {
+    if (!result.sizing) result.sizing = {};
+    result.sizing.h = node.layoutSizingHorizontal;
+  }
+  if (node.layoutSizingVertical && node.layoutSizingVertical !== "FIXED") {
+    if (!result.sizing) result.sizing = {};
+    result.sizing.v = node.layoutSizingVertical;
+  }
+
+  // Absolute positioning
+  if (node.layoutPositioning === "ABSOLUTE") {
+    result.position = "absolute";
+    if (bbox) {
+      const parentBbox = node.absoluteRenderBounds || bbox;
+      result.positionOffset = { x: Math.round(bbox.x), y: Math.round(bbox.y) };
+    }
+  }
+
+  // Flex grow
+  if (node.layoutGrow && node.layoutGrow > 0) {
+    result.flexGrow = node.layoutGrow;
+  }
+
+  // Min/max constraints
+  if (node.minWidth) result.minWidth = node.minWidth;
+  if (node.maxWidth) result.maxWidth = node.maxWidth;
+  if (node.minHeight) result.minHeight = node.minHeight;
+  if (node.maxHeight) result.maxHeight = node.maxHeight;
+
+  // Overflow
+  if (node.clipsContent) {
+    if (node.overflowDirection && node.overflowDirection !== "NONE") {
+      const dirMap: Record<string, string> = {
+        HORIZONTAL_SCROLLING: "auto-x",
+        VERTICAL_SCROLLING: "auto-y",
+        HORIZONTAL_AND_VERTICAL_SCROLLING: "auto",
+      };
+      result.overflow = dirMap[node.overflowDirection] || "hidden";
+    } else {
+      result.overflow = "hidden";
+    }
+  }
+
+  // Rotation
+  if (node.rotation && Math.abs(node.rotation) > 0.01) {
+    result.rotation = Math.round(node.rotation * 100) / 100;
+  }
+
+  // Blend mode
+  if (node.blendMode && node.blendMode !== "NORMAL" && node.blendMode !== "PASS_THROUGH") {
+    result.blendMode = node.blendMode;
+  }
+
+  // Image reference
+  const imageFill = (node.fills || []).find((f) => f.type === "IMAGE" && f.visible !== false);
+  if (imageFill && (imageFill as any).imageRef) {
+    result.imageRef = (imageFill as any).imageRef;
+  }
+
   if (node.type === "TEXT") {
     result.text = (node.characters || "").slice(0, 200);
     const style = node.style || {};
@@ -333,6 +429,19 @@ export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: numbe
     const textFills = (node.fills || []).filter((f) => f.visible !== false && f.type === "SOLID");
     if (textFills.length > 0) {
       result.textStyle.color = colorToString(textFills[0].color!, textFills[0].opacity);
+    }
+
+    if (node.textTruncation === "ENDING") {
+      result.textTruncation = "ellipsis";
+    }
+    if (node.maxLines && node.maxLines > 0) {
+      result.maxLines = node.maxLines;
+    }
+    if (node.textDecoration && node.textDecoration !== "NONE") {
+      result.textDecoration = node.textDecoration.toLowerCase();
+    }
+    if (node.textCase && node.textCase !== "ORIGINAL") {
+      result.textCase = node.textCase.toLowerCase();
     }
 
     if (Object.keys(result.textStyle).length === 0) delete result.textStyle;
@@ -993,6 +1102,45 @@ function toCondensedLine(
     if (node.layoutWrap === "WRAP") parts.push("wrap");
   }
 
+  // Sizing mode
+  if (node.layoutSizingHorizontal === "FILL") parts.push("fill-w");
+  else if (node.layoutSizingHorizontal === "HUG") parts.push("hug-w");
+  if (node.layoutSizingVertical === "FILL") parts.push("fill-h");
+  else if (node.layoutSizingVertical === "HUG") parts.push("hug-h");
+
+  // Absolute positioning
+  if (node.layoutPositioning === "ABSOLUTE") {
+    parts.push("absolute");
+    if (bbox) parts.push(`xy:${Math.round(bbox.x)},${Math.round(bbox.y)}`);
+  }
+
+  // Flex grow
+  if (node.layoutGrow && node.layoutGrow > 0) parts.push(`grow:${node.layoutGrow}`);
+
+  // Overflow
+  if (node.clipsContent) {
+    if (node.overflowDirection && node.overflowDirection !== "NONE") {
+      parts.push(`overflow:scroll-${node.overflowDirection.includes("HORIZONTAL") ? "x" : "y"}`);
+    } else {
+      parts.push("clip");
+    }
+  }
+
+  // Rotation
+  if (node.rotation && Math.abs(node.rotation) > 0.01) {
+    parts.push(`rotate:${Math.round(node.rotation)}deg`);
+  }
+
+  // Blend mode
+  if (node.blendMode && node.blendMode !== "NORMAL" && node.blendMode !== "PASS_THROUGH") {
+    parts.push(`blend:${node.blendMode.toLowerCase()}`);
+  }
+
+  // Stroke align
+  if (node.strokeAlign && node.strokeAlign !== "CENTER") {
+    parts.push(`stroke-${node.strokeAlign.toLowerCase()}`);
+  }
+
   const inferredLayout = inferLayoutFromChildBounds(node);
   if (inferredLayout) {
     parts.push(`inferred-${inferredLayout.mode}`);
@@ -1011,9 +1159,25 @@ function toCondensedLine(
     if (style.fontWeight) textParts.push(`/${style.fontWeight}`);
     if (textParts.length > 0) parts.push(textParts.join(""));
 
+    if (style.fontFamily) parts.push(`font:${style.fontFamily}`);
+    if (style.lineHeightPx) parts.push(`lh:${Math.round(style.lineHeightPx)}px`);
+    if (style.letterSpacing) parts.push(`ls:${style.letterSpacing}`);
+    if (style.textAlignHorizontal && style.textAlignHorizontal !== "LEFT") {
+      parts.push(`align:${style.textAlignHorizontal.toLowerCase()}`);
+    }
+
     const textFills = (node.fills || []).filter((f) => f.visible !== false && f.type === "SOLID");
     if (textFills.length > 0) {
       parts.push(colorToString(textFills[0].color, textFills[0].opacity) || "");
+    }
+
+    if (node.textTruncation === "ENDING") parts.push("truncate");
+    if (node.maxLines && node.maxLines > 0) parts.push(`max-lines:${node.maxLines}`);
+    if (node.textDecoration && node.textDecoration !== "NONE") {
+      parts.push(node.textDecoration.toLowerCase());
+    }
+    if (node.textCase && node.textCase !== "ORIGINAL") {
+      parts.push(`case:${node.textCase.toLowerCase()}`);
     }
 
     const text = (node.characters || "").slice(0, 50);

@@ -52,6 +52,23 @@ export function registerPrompts(server: McpServer) {
       ],
     })
   );
+
+  server.prompt(
+    "gen-pixel-perfect",
+    "从 Figma 设计稿像素级精确还原前端组件/页面",
+    { url: z.string().describe("Figma 组件/页面 URL") },
+    async ({ url }) => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: buildGenPixelPerfectPrompt(url),
+          },
+        },
+      ],
+    })
+  );
 }
 
 function buildGenComponentPrompt(url: string): string {
@@ -142,4 +159,38 @@ Figma URL: ${url}
 - 合并而非覆盖已有 token 文件
 - 保留 Figma 中的语义命名
 - 如果有多主题，说明切换方式`;
+}
+
+function buildGenPixelPerfectPrompt(url: string): string {
+  return `请根据以下 Figma 设计稿进行像素级精确还原，生成前端代码。
+
+Figma URL: ${url}
+
+## 工作流程
+
+1. **检测技术栈**：读取 package.json、tsconfig.json、项目结构，确定框架和样式方案
+2. **获取设计数据（精确模式）**：
+   - 调用 get_node，参数：precision: "pixel-perfect", format: "json", depth: 15
+   - 对有 imageRef 的节点调用 get_images 获取图片 URL
+   - 对图标/矢量节点调用 export_svg 获取 SVG 文件
+   - 调用 get_variables 获取设计 token
+3. **逐节点精确转换**：
+   - 布局：flex-direction、gap、justify-content、align-items、flex-wrap
+   - 子元素尺寸：FILL→flex:1, HUG→fit-content, FIXED→精确px
+   - 定位：absolute + top/left 精确偏移
+   - 视觉：颜色精确hex、渐变精确参数、圆角四角独立、阴影完整参数
+   - 边框：strokeAlign(inside用box-shadow)、四边独立、虚线
+   - 文字：font-family/size/weight/line-height/letter-spacing/align/decoration/transform/truncation
+   - 溢出：clipsContent→overflow:hidden、滚动方向
+   - 变换：rotation→transform:rotate
+   - 图片：所有 IMAGE fill 获取实际 URL
+4. **生成代码**：使用项目技术栈，每个数值精确匹配设计稿
+5. **自检**：逐项验证颜色、间距、字体、布局、圆角、阴影、图片
+
+## 精度要求
+- 颜色值必须与设计稿 hex 完全一致，不做近似
+- 间距/尺寸精确到 px，不做四舍五入到 4/8 的倍数
+- 字体属性完整：family + size + weight + line-height + letter-spacing
+- 布局行为精确：flex 子元素的 sizing 策略必须正确
+- 图片/图标不能缺失，必须有正确引用`;
 }
