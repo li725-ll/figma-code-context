@@ -684,7 +684,7 @@
         if (exported.length === 0) {
           const message = detected.length > 0
             ? `检测到 ${detected.length} 个候选图标，但还没有生成 SVG 预览。`
-            : "还没有图标预览。确认 URL 指向含图标的节点，并勾选"预览图标"。";
+            : '还没有图标预览。确认 URL 指向含图标的节点，并勾选"预览图标"。';
           els.iconsGrid.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
         } else {
           els.iconsGrid.innerHTML = exported
