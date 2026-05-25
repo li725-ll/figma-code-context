@@ -98,10 +98,10 @@ function main() {
 
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`
-figma-ai-init - 安装 Figma Code Context skills 到当前项目
+figma-code-init - 安装 Figma Code Context skills 到当前项目
 
 用法:
-  npx figma-ai-init [选项]
+  npx figma-code-init [选项]
 
 选项:
   --dir <path>   指定项目目录（默认：当前目录）

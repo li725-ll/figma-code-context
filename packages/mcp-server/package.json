@@ -6,7 +6,7 @@
   "description": "MCP server that transforms Figma API data into AI-friendly formats for LLM code generation",
   "bin": {
     "figma-code-context": "./dist/index.js",
-    "figma-ai-init": "./dist/init.js"
+    "figma-code-init": "./dist/init.js"
   },
   "files": [
     "dist",

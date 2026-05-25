@@ -15,7 +15,7 @@ MCP server that transforms Figma API data into AI-friendly formats, enabling LLM
 ### Install to your project
 
 ```bash
-npx figma-ai-init --dir /path/to/your/project
+npx figma-code-init --dir /path/to/your/project
 ```
 
 This will:

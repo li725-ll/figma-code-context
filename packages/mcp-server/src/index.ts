@@ -96,8 +96,8 @@ function formatError(error: unknown): { content: Array<{ type: "text"; text: str
 }
 
 const server = new McpServer({
-  name: "figma-ai-context",
-  version: "1.2.2",
+  name: "figma-code-context",
+  version: "1.4.0",
 });
 
 const tempManager = new TempManager();
