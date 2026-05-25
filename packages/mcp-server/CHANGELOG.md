@@ -1,5 +1,11 @@
 # figma-code-context
 
+## 1.5.2
+
+### Patch Changes
+
+- Fix: rebuild with correct bundled dist (previous publish had stale build artifacts)
+
 ## 1.5.1
 
 ### Patch Changes
