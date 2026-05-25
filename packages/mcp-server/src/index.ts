@@ -33,6 +33,7 @@ import {
   searchNodes,
 } from "@figma/core";
 import { diffNodes, formatDiffOutput } from "@figma/core";
+import { registerPrompts } from "./prompts/index.js";
 
 // Load .env from monorepo root
 const __mcp_dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -989,6 +990,8 @@ server.registerTool(
     }
   }
 );
+
+registerPrompts(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
