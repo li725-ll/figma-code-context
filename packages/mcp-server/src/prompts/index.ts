@@ -3,6 +3,23 @@ import { z } from "zod";
 
 export function registerPrompts(server: McpServer) {
   server.prompt(
+    "gen-app",
+    "从 Figma 文件一键生成完整应用（所有页面、组件、tokens），全自动闭环验证",
+    { url: z.string().describe("Figma 文件 URL（包含所有页面）") },
+    async ({ url }) => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: buildGenAppPrompt(url),
+          },
+        },
+      ],
+    })
+  );
+
+  server.prompt(
     "gen-component",
     "从 Figma 设计稿生成前端组件，自动检测技术栈、预留事件接口",
     { url: z.string().describe("Figma 组件/Frame URL") },
@@ -237,4 +254,74 @@ Figma URL: ${url}
 - 保持风格：使用项目已有的样式写法
 - 保留逻辑：不改动交互逻辑、事件处理、状态管理
 - 尊重 token：优先使用项目已有的 design token`;
+}
+
+function buildGenAppPrompt(url: string): string {
+  return `请根据以下 Figma 文件 URL，全自动生成完整应用代码。文件中包含所有页面。
+
+Figma 文件 URL: ${url}
+
+## 核心原则
+
+- 全程自主决策，不中断用户
+- 严格依赖顺序：tokens → 共享组件 → 页面
+- 先框架后细节：先搭建完整骨架（Round 1），再填充结构（Round 2），再样式（Round 3），最后精修（Round 4）
+- 每个任务三步循环：规划 → 开发 → 验证
+- 闭环：验证不通过 → 自动修复 → 重新验证，直到通过
+- 所有 Round 完成后，执行一次整体全量验证
+
+## 工作流程
+
+### 阶段 1：分析与规划
+
+1. **检测项目技术栈**：读取 package.json、tsconfig.json、项目结构，确定框架、样式方案、路由方式
+2. **获取文件结构**：调用 get_file_structure 获取所有页面和顶层 Frame
+3. **识别共享组件**：调用 get_components，构建组件依赖图，与项目已有组件匹配（复用/扩展/新建）
+4. **识别设计系统**：调用 get_variables + get_styles，分析颜色、间距、字体、阴影 token
+5. **输出执行计划**：页面清单、组件依赖图、路由结构、生成顺序
+
+### 阶段 2：基础设施 + 骨架（Round 1）
+
+1. **同步 Design Tokens**：get_variables + get_styles → 生成 token 文件（匹配项目样式方案）
+2. **项目脚手架**（如需要）：初始化框架、配置路由、安装依赖
+3. **创建所有页面空壳**：正确路由位置 + 布局容器 + 页面标题占位
+4. **创建所有共享组件占位**：完整 Props 接口 + 最小实现
+5. **质量关卡**：pnpm build 通过，所有路由可访问
+
+### 阶段 3：结构填充（Round 2）
+
+对每个共享组件（按依赖顺序）和每个页面执行：
+1. **规划**：调用 get_node（condensed）或 get_page_for_codegen 获取设计数据
+2. **开发**：生成完整 DOM 结构，引用已有组件，导出图片/SVG 资源
+3. **验证**：构建通过 + 类型检查通过
+4. **质量关卡**：全量构建通过
+
+### 阶段 4：样式填充（Round 3）
+
+对每个组件/页面：
+1. **规划**：调用 get_node_css（recursive: true）获取样式
+2. **开发**：应用 design tokens + 精确样式值（间距、颜色、字体、圆角、阴影）
+3. **验证**：构建通过 + 样式属性完整
+4. **质量关卡**：全量构建通过 + lint 通过
+
+### 阶段 5：精修闭环（Round 4）
+
+1. **Pixel-Perfect 校验**：对每个页面/组件调用 get_node_css（precision: pixel-perfect, recursive: true），逐属性对比，发现偏差自动修复（最多 3 轮）
+2. **资源完整性**：确认所有图片/SVG 已导出并正确引用
+3. **最终全量验证**：构建通过 + 类型检查 + lint + 所有 import 完整
+4. **输出最终报告**：文件概览、路由结构、已知限制、后续建议
+
+## 错误处理
+
+- API 429 → 等待 30s 重试（最多 3 次）
+- 构建失败 → 分析错误 → 修复 → 重试（最多 3 次）
+- 3 次仍失败 → 记录到延迟列表，继续下一个
+- 超大节点 → 降低 depth + condensed 格式
+
+## 上下文管理
+
+- 使用 condensed 格式（省 60%+ token），仅精修阶段用 pixel-perfect
+- 每个组件/页面处理完后不保留 Figma 原始数据
+- 超过 20 页 → 分批处理（每批 5 页）
+- 组件依赖图和执行计划始终保留`;
 }

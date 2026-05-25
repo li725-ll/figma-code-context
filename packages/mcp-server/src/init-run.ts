@@ -69,7 +69,14 @@ function copySkills(projectRoot: string): string[] {
     process.exit(1);
   }
 
-  const files = ["gen-component.md", "gen-page.md", "gen-pixel-perfect.md", "sync-tokens.md", "tweak-style.md"];
+  const files = [
+    "gen-app.md",
+    "gen-component.md",
+    "gen-page.md",
+    "gen-pixel-perfect.md",
+    "sync-tokens.md",
+    "tweak-style.md",
+  ];
 
   for (const file of files) {
     const src = path.join(SKILLS_SOURCE, file);
@@ -136,6 +143,7 @@ figma-code-context init - 安装 Figma Code Context skills 到当前项目
   }
 
   console.log(`\n完成! 在 Claude Code 中使用:`);
+  console.log(`  /figma:gen-app <figma-file-url>        (一键生成完整应用)`);
   console.log(`  /figma:gen-component <figma-url>`);
   console.log(`  /figma:gen-page <figma-url>`);
   console.log(`  /figma:gen-pixel-perfect <figma-url>`);
