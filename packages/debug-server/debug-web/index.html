@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Figma AI Context Debug</title>
+    <style>
+      :root {
+        --bg: #f6f8fb;
+        --panel: #ffffff;
+        --ink: #17202a;
+        --muted: #64748b;
+        --line: #d9e2ec;
+        --blue: #2563eb;
+        --blue-dark: #1d4ed8;
+        --green: #0f766e;
+        --amber: #a16207;
+        --code: #101828;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 14px;
+      }
+
+      button,
+      input,
+      label,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      .app {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .topbar {
+        border-bottom: 1px solid var(--line);
+        background: #ffffff;
+      }
+
+      .topbar-inner {
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 18px 22px;
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        align-items: center;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.25;
+      }
+
+      .subtitle {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status {
+        min-width: 220px;
+        text-align: right;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status strong {
+        color: var(--green);
+      }
+
+      main {
+        width: 100%;
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 18px 22px 28px;
+      }
+
+      .controls {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 2fr) minmax(260px, 1.5fr) 110px 130px;
+        gap: 12px;
+        align-items: end;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .field label {
+        color: #334155;
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      input {
+        width: 100%;
+        height: 38px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 8px 10px;
+        background: #ffffff;
+        color: var(--ink);
+        outline: none;
+      }
+
+      input:focus {
+        border-color: var(--blue);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+      }
+
+      .inline {
+        height: 38px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: #334155;
+        white-space: nowrap;
+      }
+
+      .inline input {
+        width: 16px;
+        height: 16px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: flex-end;
+      }
+
+      button {
+        height: 38px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        padding: 0 14px;
+        background: var(--blue);
+        color: #ffffff;
+        cursor: pointer;
+        font-weight: 650;
+      }
+
+      button:hover {
+        background: var(--blue-dark);
+      }
+
+      button.secondary {
+        background: #ffffff;
+        color: #1f2937;
+        border-color: #cbd5e1;
+      }
+
+      button.secondary:hover {
+        background: #f8fafc;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      .hint {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .summary {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .metric {
+        background: #ffffff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        min-height: 74px;
+      }
+
+      .metric-label {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .metric-value {
+        margin-top: 7px;
+        font-size: 17px;
+        font-weight: 750;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tabs {
+        margin-top: 16px;
+        display: flex;
+        gap: 6px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .tab {
+        height: 36px;
+        border: 1px solid transparent;
+        border-bottom: none;
+        border-radius: 6px 6px 0 0;
+        background: transparent;
+        color: #334155;
+        padding: 0 12px;
+      }
+
+      .tab:hover {
+        background: #eef4ff;
+      }
+
+      .tab.active {
+        background: #ffffff;
+        border-color: var(--line);
+        color: #0f172a;
+      }
+
+      .panes {
+        background: #ffffff;
+        border: 1px solid var(--line);
+        border-top: none;
+        min-height: 520px;
+      }
+
+      .pane {
+        display: none;
+        padding: 14px;
+      }
+
+      .pane.active {
+        display: block;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .viewer {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        min-width: 0;
+      }
+
+      .viewer-head {
+        min-height: 42px;
+        padding: 10px 12px;
+        background: #f8fafc;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .viewer-title {
+        font-weight: 750;
+      }
+
+      .viewer-note {
+        color: var(--muted);
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      pre {
+        margin: 0;
+        min-height: 480px;
+        max-height: 68vh;
+        overflow: auto;
+        padding: 14px;
+        background: var(--code);
+        color: #d6e4ff;
+        font-family: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        line-height: 1.55;
+        tab-size: 2;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .condensed {
+        color: #d1fae5;
+      }
+
+      .icon-toolbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .icon-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        gap: 12px;
+      }
+
+      .icon-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+        background: #ffffff;
+      }
+
+      .icon-preview {
+        height: 118px;
+        display: grid;
+        place-items: center;
+        background-color: #344054;
+        background-image:
+          linear-gradient(45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25%),
+          linear-gradient(-45deg, rgba(255, 255, 255, 0.08) 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.08) 75%),
+          linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.08) 75%);
+        background-size: 18px 18px;
+        background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+      }
+
+      .icon-preview img {
+        max-width: 78px;
+        max-height: 78px;
+      }
+
+      .icon-meta {
+        border-top: 1px solid var(--line);
+        padding: 10px;
+      }
+
+      .icon-name {
+        font-weight: 750;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .icon-path,
+      .icon-id {
+        margin-top: 5px;
+        color: var(--muted);
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .detected-list {
+        margin-top: 14px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: #ffffff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      th,
+      td {
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: #f8fafc;
+        color: #334155;
+        font-size: 12px;
+      }
+
+      td {
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 12px;
+      }
+
+      tr:last-child td {
+        border-bottom: none;
+      }
+
+      .empty {
+        border: 1px dashed #cbd5e1;
+        border-radius: 8px;
+        padding: 28px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .error {
+        margin-top: 12px;
+        border: 1px solid #fecaca;
+        background: #fff1f2;
+        color: #9f1239;
+        border-radius: 8px;
+        padding: 12px;
+        display: none;
+        white-space: pre-wrap;
+      }
+
+      .error.visible {
+        display: block;
+      }
+
+      @media (max-width: 1050px) {
+        .form-grid,
+        .split,
+        .summary {
+          grid-template-columns: 1fr;
+        }
+
+        .topbar-inner {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .status {
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="topbar-inner">
+          <div>
+            <h1>Figma AI Context Debug</h1>
+            <div class="subtitle">本地测试 Figma 连接、原始 API 数据、优化数据和 SVG 图标集合</div>
+          </div>
+          <div class="status" id="status">未连接</div>
+        </div>
+      </header>
+
+      <main>
+        <section class="controls">
+          <div class="form-grid">
+            <div class="field">
+              <label for="token">Figma Token</label>
+              <input id="token" type="password" autocomplete="off" placeholder="figd_..." />
+            </div>
+            <div class="field">
+              <label for="figmaUrl">Figma URL</label>
+              <input id="figmaUrl" type="text" placeholder="https://www.figma.com/design/...?...node-id=1-2" />
+            </div>
+            <div class="field">
+              <label for="depth">深度</label>
+              <input id="depth" type="number" min="1" max="20" value="10" />
+            </div>
+            <label class="inline">
+              <input id="exportIcons" type="checkbox" checked />
+              预览图标
+            </label>
+          </div>
+
+          <div class="form-grid" style="margin-top: 12px; grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) 130px 180px;">
+            <div class="field">
+              <label for="fileKey">fileKey</label>
+              <input id="fileKey" type="text" placeholder="URL 可自动解析" />
+            </div>
+            <div class="field">
+              <label for="nodeId">nodeId</label>
+              <input id="nodeId" type="text" placeholder="例如 312:33667 或 312-33667" />
+            </div>
+            <div class="field">
+              <label for="maxTokens">Token 预算</label>
+              <input id="maxTokens" type="number" min="500" max="50000" value="6000" />
+            </div>
+            <div class="actions">
+              <button class="secondary" id="resetBtn" type="button">清空调试目录</button>
+              <button id="inspectBtn" type="button">检查</button>
+            </div>
+          </div>
+
+          <div class="hint">
+            Token 只发送到本机调试服务，再由本机请求 Figma API。带 node-id 的 URL 会拉取指定节点；没有 node-id 时按深度拉取文件结构。
+          </div>
+          <div class="error" id="errorBox"></div>
+        </section>
+
+        <section class="summary" id="summary">
+          <div class="metric">
+            <div class="metric-label">目标</div>
+            <div class="metric-value" id="metricTarget">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">节点数</div>
+            <div class="metric-value" id="metricNodes">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">检测图标</div>
+            <div class="metric-value" id="metricDetected">-</div>
+          </div>
+          <div class="metric">
+            <div class="metric-label">导出 SVG</div>
+            <div class="metric-value" id="metricExported">-</div>
+          </div>
+        </section>
+
+        <nav class="tabs" aria-label="Debug views">
+          <button class="tab active" type="button" data-tab="data">数据对比</button>
+          <button class="tab" type="button" data-tab="condensed">压缩文本</button>
+          <button class="tab" type="button" data-tab="icons">图标集合</button>
+        </nav>
+
+        <section class="panes">
+          <div class="pane active" id="pane-data">
+            <div class="split">
+              <div class="viewer">
+                <div class="viewer-head">
+                  <div class="viewer-title">原始数据</div>
+                  <div class="viewer-note" id="rawNote">Figma API response</div>
+                </div>
+                <pre id="rawJson">{}</pre>
+              </div>
+              <div class="viewer">
+                <div class="viewer-head">
+                  <div class="viewer-title">优化数据</div>
+                  <div class="viewer-note" id="optimizedNote">summary + tree + variables</div>
+                </div>
+                <pre id="optimizedJson">{}</pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="pane" id="pane-condensed">
+            <div class="viewer">
+              <div class="viewer-head">
+                <div class="viewer-title">AI 友好压缩文本</div>
+                <div class="viewer-note">toCondensedWithBudget</div>
+              </div>
+              <pre class="condensed" id="condensedText"></pre>
+            </div>
+          </div>
+
+          <div class="pane" id="pane-icons">
+            <div class="icon-toolbar">
+              <div>
+                <strong>SVG 图标预览</strong>
+                <div class="viewer-note">预览文件保存在项目 `.figma-temp/svg`，索引保存在 `.figma-temp/icons/index.json`</div>
+              </div>
+              <div class="actions">
+                <button class="secondary" id="refreshIconsBtn" type="button">刷新索引</button>
+                <button class="secondary" id="downloadIconsBtn" type="button">下载图标包</button>
+                <button id="exportIconsBtn" type="button">生成图标预览</button>
+              </div>
+            </div>
+            <div id="iconsGrid" class="icon-grid"></div>
+            <div class="detected-list" id="detectedList"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const els = {
+        token: document.getElementById("token"),
+        figmaUrl: document.getElementById("figmaUrl"),
+        fileKey: document.getElementById("fileKey"),
+        nodeId: document.getElementById("nodeId"),
+        depth: document.getElementById("depth"),
+        maxTokens: document.getElementById("maxTokens"),
+        exportIcons: document.getElementById("exportIcons"),
+        inspectBtn: document.getElementById("inspectBtn"),
+        resetBtn: document.getElementById("resetBtn"),
+        refreshIconsBtn: document.getElementById("refreshIconsBtn"),
+        exportIconsBtn: document.getElementById("exportIconsBtn"),
+        downloadIconsBtn: document.getElementById("downloadIconsBtn"),
+        status: document.getElementById("status"),
+        errorBox: document.getElementById("errorBox"),
+        rawJson: document.getElementById("rawJson"),
+        optimizedJson: document.getElementById("optimizedJson"),
+        condensedText: document.getElementById("condensedText"),
+        rawNote: document.getElementById("rawNote"),
+        optimizedNote: document.getElementById("optimizedNote"),
+        metricTarget: document.getElementById("metricTarget"),
+        metricNodes: document.getElementById("metricNodes"),
+        metricDetected: document.getElementById("metricDetected"),
+        metricExported: document.getElementById("metricExported"),
+        iconsGrid: document.getElementById("iconsGrid"),
+        detectedList: document.getElementById("detectedList"),
+      };
+
+      let lastResult = null;
+
+      function pretty(data) {
+        return JSON.stringify(data, null, 2);
+      }
+
+      function setLoading(isLoading) {
+        els.inspectBtn.disabled = isLoading;
+        els.resetBtn.disabled = isLoading;
+        els.inspectBtn.textContent = isLoading ? "检查中..." : "检查";
+        els.status.innerHTML = isLoading ? "正在请求 Figma API" : "就绪";
+      }
+
+      function showError(message) {
+        els.errorBox.textContent = message || "";
+        els.errorBox.classList.toggle("visible", Boolean(message));
+      }
+
+      function updateSummary(result) {
+        const summary = result?.optimized?.summary || {};
+        const target = result?.target || {};
+        els.metricTarget.textContent = target.nodeId || target.fileKey || "-";
+        els.metricNodes.textContent = summary.totalNodes ?? "-";
+        els.metricDetected.textContent = result?.icons?.detected?.length ?? "-";
+        els.metricExported.textContent = result?.icons?.exported?.length ?? "-";
+        els.rawNote.textContent = target.nodeId ? "getFileNodes response" : "getFile response";
+        els.optimizedNote.textContent = result?.target?.tempDir || "summary + tree + variables";
+      }
+
+      function renderData(result) {
+        els.rawJson.textContent = result?.rawPreview?.text || "{}";
+        els.optimizedJson.textContent = result?.optimizedPreview?.text || "{}";
+        const target = result?.target || {};
+        const rawMeta = result?.rawPreview
+          ? `${formatBytes(result.rawPreview.bytes)}${result.rawPreview.truncated ? " preview" : ""}`
+          : "Figma API response";
+        const optimizedMeta = result?.optimizedPreview
+          ? `${formatBytes(result.optimizedPreview.bytes)}${result.optimizedPreview.truncated ? " preview" : ""}`
+          : "summary + tree + variables";
+        els.rawNote.textContent = target.rawPath ? `${rawMeta} | ${target.rawPath}` : rawMeta;
+        els.optimizedNote.textContent = target.optimizedPath ? `${optimizedMeta} | ${target.optimizedPath}` : optimizedMeta;
+        const optimized = result?.optimized || {};
+        els.condensedText.textContent = optimized.condensed || "";
+        if (target.condensedPath) {
+          els.condensedText.textContent += `\n\n# Saved to\n${target.condensedPath}`;
+        }
+      }
+
+      function formatBytes(bytes) {
+        const value = Number(bytes || 0);
+        if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+        if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+        return `${value} B`;
+      }
+
+      function iconHref(icon) {
+        return icon.href || "";
+      }
+      function renderIcons(result) {
+        const exported = normalizeExportedIcons(result?.icons?.exported || result?.icons?.index?.exported || []);
+        const detected = result?.icons?.detected || [];
+
+        if (exported.length === 0) {
+          const message = detected.length > 0
+            ? `检测到 ${detected.length} 个候选图标，但还没有生成 SVG 预览。`
+            : "还没有图标预览。确认 URL 指向含图标的节点，并勾选"预览图标"。";
+          els.iconsGrid.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
+        } else {
+          els.iconsGrid.innerHTML = exported
+            .map((icon) => `
+              <article class="icon-card">
+                <div class="icon-preview">
+                  <img src="${iconHref(icon)}" alt="${escapeHtml(icon.filename || icon.nodeId)}" />
+                </div>
+                <div class="icon-meta">
+                  <div class="icon-name" title="${escapeHtml(icon.filename || "")}">${escapeHtml(icon.filename || icon.nodeId)}</div>
+                  <div class="icon-id" title="${escapeHtml(icon.nodeId || "")}">${escapeHtml(icon.nodeId || "")}</div>
+                  <div class="icon-path" title="${escapeHtml(icon.path || "")}">${escapeHtml(icon.path || "")}</div>
+                </div>
+              </article>
+            `)
+            .join("");
+        }
+
+        if (detected.length === 0) {
+          els.detectedList.innerHTML = '<div class="empty">当前节点没有检测到可导出的图标或矢量节点。</div>';
+          return;
+        }
+
+        els.detectedList.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Node ID</th>
+                <th>Name</th>
+                <th>Role</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${detected.map((node) => `
+                <tr>
+                  <td>${escapeHtml(node.id || "")}</td>
+                  <td>${escapeHtml(node.name || "")}</td>
+                  <td>${escapeHtml(node.role || "")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        `;
+      }
+
+      function normalizeExportedIcons(icons) {
+        return (icons || []).map((icon) => {
+          const filename = icon.filename || icon.name || "";
+          return {
+            ...icon,
+            filename,
+            nodeId: icon.nodeId || icon.id || "",
+            path: icon.path || icon.svgPath || "",
+            href: icon.href || (filename ? `/debug-assets/svg/${encodeURIComponent(filename)}` : ""),
+          };
+        });
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+      async function postJson(url, body) {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data?.error || `HTTP ${resp.status}`);
+        return data;
+      }
+
+      async function inspect() {
+        showError("");
+        setLoading(true);
+        try {
+          const body = {
+            token: els.token.value,
+            url: els.figmaUrl.value,
+            fileKey: els.fileKey.value,
+            nodeId: els.nodeId.value,
+            depth: parseInt(els.depth.value, 10) || 10,
+            maxTokens: parseInt(els.maxTokens.value, 10) || 6000,
+            exportIcons: els.exportIcons.checked,
+          };
+          const result = await postJson("/api/inspect", body);
+          lastResult = result;
+          renderData(result);
+          renderIcons(result);
+          updateSummary(result);
+          els.status.textContent = "检查完成";
+        } catch (error) {
+          showError(error.message);
+          els.status.textContent = "请求失败";
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      async function resetDebugDir() {
+        showError("");
+        try {
+          await postJson("/api/reset", {});
+          els.status.textContent = "调试目录已清空";
+          lastResult = null;
+          els.rawJson.textContent = "{}";
+          els.optimizedJson.textContent = "{}";
+          els.condensedText.textContent = "";
+          els.iconsGrid.innerHTML = "";
+          els.detectedList.innerHTML = "";
+          els.metricTarget.textContent = "-";
+          els.metricNodes.textContent = "-";
+          els.metricDetected.textContent = "-";
+          els.metricExported.textContent = "-";
+        } catch (error) {
+          showError(error.message);
+        }
+      }
+
+      async function refreshIcons() {
+        showError("");
+        try {
+          const result = await postJson("/api/icons-index", {});
+          const exported = normalizeExportedIcons(result.exported || []);
+          if (lastResult) {
+            lastResult.icons = lastResult.icons || {};
+            lastResult.icons.exported = exported;
+            lastResult.icons.index = result;
+          }
+          renderIcons(lastResult || { icons: { exported, detected: [] } });
+          updateSummary(lastResult);
+          els.status.textContent = `已加载 ${exported.length} 个 SVG`;
+          return exported;
+        } catch (error) {
+          showError(error.message);
+          return [];
+        }
+      }
+
+      async function exportDetectedIcons() {
+        if (!lastResult?.icons?.detected?.length) {
+          showError("没有检测到可导出的图标。请先执行检查。");
+          return;
+        }
+        showError("");
+        els.exportIconsBtn.disabled = true;
+        els.exportIconsBtn.textContent = "生成中...";
+        els.status.textContent = "正在生成 SVG 预览";
+        try {
+          const result = await postJson("/api/export-icons", {
+            token: els.token.value,
+            fileKey: lastResult.target?.fileKey,
+            icons: lastResult.icons.detected,
+          });
+          lastResult.icons.exported = normalizeExportedIcons(result.exported || result.index?.exported || []);
+          lastResult.icons.index = result.index;
+          renderIcons(lastResult);
+          updateSummary(lastResult);
+          els.status.textContent = `已生成 ${lastResult.icons.exported.length} 个 SVG 预览`;
+        } catch (error) {
+          const exportedFromDisk = await refreshIcons();
+          if (exportedFromDisk.length > 0) {
+            showError(`Export request ended with: ${error.message}\nLoaded ${exportedFromDisk.length} SVG files from disk index.`);
+            els.status.textContent = "已从磁盘加载 SVG 预览";
+          } else {
+            showError(error.message);
+            els.status.textContent = "预览生成失败";
+          }
+        } finally {
+          els.exportIconsBtn.disabled = false;
+          els.exportIconsBtn.textContent = "生成图标预览";
+        }
+      }
+
+      function downloadIconsPackage() {
+        window.location.href = "/api/icons.zip";
+      }
+
+      document.querySelectorAll(".tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+          document.querySelectorAll(".pane").forEach((item) => item.classList.remove("active"));
+          tab.classList.add("active");
+          document.getElementById(`pane-${tab.dataset.tab}`).classList.add("active");
+        });
+      });
+
+      els.inspectBtn.addEventListener("click", inspect);
+      els.resetBtn.addEventListener("click", resetDebugDir);
+      els.refreshIconsBtn.addEventListener("click", refreshIcons);
+      els.exportIconsBtn.addEventListener("click", exportDetectedIcons);
+      els.downloadIconsBtn.addEventListener("click", downloadIconsPackage);
+
+      fetch("/api/health")
+        .then((response) => response.json())
+        .then(() => {
+          els.status.textContent = "本地调试服务已启动";
+        })
+        .catch(() => {
+          els.status.textContent = "本地调试服务未响应";
+        });
+    </script>
+  </body>
+</html>
+
+
+
