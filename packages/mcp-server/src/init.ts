@@ -41,11 +41,14 @@ function mergeMcpJson(projectRoot: string): void {
   }
 
   const mcpServers = (mcpJson.mcpServers ?? {}) as Record<string, unknown>;
-  const existing = mcpServers["figma-ai-context"] as Record<string, unknown> | undefined;
+  const existing = (mcpServers["figma-code-context"] ?? mcpServers["figma-ai-context"]) as
+    | Record<string, unknown>
+    | undefined;
 
   const serverBin = getMcpServerCommand();
 
-  mcpServers["figma-ai-context"] = {
+  delete mcpServers["figma-ai-context"];
+  mcpServers["figma-code-context"] = {
     command: "npx",
     args: [serverBin],
     env: {
@@ -137,11 +140,11 @@ figma-ai-init - 安装 Figma AI skills 到当前项目
   }
 
   console.log(`\n完成! 在 Claude Code 中使用:`);
-  console.log(`  /project:figma/gen-component <figma-url>`);
-  console.log(`  /project:figma/gen-page <figma-url>`);
-  console.log(`  /project:figma/gen-pixel-perfect <figma-url>`);
-  console.log(`  /project:figma/tweak-style <figma-url>`);
-  console.log(`  /project:figma/sync-tokens <figma-url>\n`);
+  console.log(`  /figma:gen-component <figma-url>`);
+  console.log(`  /figma:gen-page <figma-url>`);
+  console.log(`  /figma:gen-pixel-perfect <figma-url>`);
+  console.log(`  /figma:tweak-style <figma-url>`);
+  console.log(`  /figma:sync-tokens <figma-url>\n`);
 }
 
 main();
