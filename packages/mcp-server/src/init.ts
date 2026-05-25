@@ -68,7 +68,7 @@ function copySkills(projectRoot: string): string[] {
     process.exit(1);
   }
 
-  const files = ["gen-component.md", "gen-page.md", "gen-pixel-perfect.md", "sync-tokens.md"];
+  const files = ["gen-component.md", "gen-page.md", "gen-pixel-perfect.md", "sync-tokens.md", "tweak-style.md"];
 
   for (const file of files) {
     const src = path.join(SKILLS_SOURCE, file);
@@ -140,6 +140,7 @@ figma-ai-init - 安装 Figma AI skills 到当前项目
   console.log(`  /project:figma/gen-component <figma-url>`);
   console.log(`  /project:figma/gen-page <figma-url>`);
   console.log(`  /project:figma/gen-pixel-perfect <figma-url>`);
+  console.log(`  /project:figma/tweak-style <figma-url>`);
   console.log(`  /project:figma/sync-tokens <figma-url>\n`);
 }
 

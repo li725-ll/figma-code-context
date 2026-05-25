@@ -69,6 +69,23 @@ export function registerPrompts(server: McpServer) {
       ],
     })
   );
+
+  server.prompt(
+    "tweak-style",
+    "对比 Figma 设计稿与当前实现，局部修正样式差异",
+    { url: z.string().describe("Figma 节点 URL") },
+    async ({ url }) => ({
+      messages: [
+        {
+          role: "user" as const,
+          content: {
+            type: "text" as const,
+            text: buildTweakStylePrompt(url),
+          },
+        },
+      ],
+    })
+  );
 }
 
 function buildGenComponentPrompt(url: string): string {
@@ -193,4 +210,28 @@ Figma URL: ${url}
 - 字体属性完整：family + size + weight + line-height + letter-spacing
 - 布局行为精确：flex 子元素的 sizing 策略必须正确
 - 图片/图标不能缺失，必须有正确引用`;
+}
+
+function buildTweakStylePrompt(url: string): string {
+  return `请对比以下 Figma 设计稿与当前实现，找出样式差异并进行局部修正。
+
+Figma URL: ${url}
+
+## 工作流程
+
+1. **确认范围**：确认需要修正的文件/组件，以及具体偏差方面（间距、颜色、字体、布局、尺寸等）
+2. **获取设计数据**：
+   - 调用 get_node，参数：precision: "pixel-perfect", format: "json", depth: 15
+   - 调用 get_node_css 获取精确样式
+   - 如有图片/图标差异，调用 get_images 或 export_svg
+3. **读取当前实现**：读取组件文件，识别样式方案，解析当前样式值
+4. **逐项对比**：列出设计稿值 vs 当前实现值的差异表
+5. **精准修正**：只修改有偏差的属性，保持代码风格和逻辑不变
+6. **验证**：确认所有标记的偏差已修正，未引入新问题
+
+## 修正原则
+- 最小改动：只改有偏差的属性，不动其他代码
+- 保持风格：使用项目已有的样式写法
+- 保留逻辑：不改动交互逻辑、事件处理、状态管理
+- 尊重 token：优先使用项目已有的 design token`;
 }
