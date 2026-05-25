@@ -1,0 +1,25 @@
+{
+  "name": "@figma/debug-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "HTTP debug server with web UI for inspecting Figma API responses during development",
+  "bin": {
+    "figma-debug": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@figma/client": "workspace:*",
+    "@figma/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0"
+  }
+}

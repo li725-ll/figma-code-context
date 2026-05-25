@@ -1,0 +1,22 @@
+{
+  "name": "@figma/core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@figma/client": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}
