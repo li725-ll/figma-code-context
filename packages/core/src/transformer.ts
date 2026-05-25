@@ -92,6 +92,57 @@ interface InferredLayout {
   gap?: number;
 }
 
+interface RichTextSegment {
+  text: string;
+  style?: Record<string, any>;
+}
+
+function parseRichTextSegments(
+  characters: string,
+  overrides: number[],
+  table: Record<string, any>
+): RichTextSegment[] | null {
+  if (!characters || !overrides || overrides.length === 0) return null;
+
+  const segments: RichTextSegment[] = [];
+  let currentStyleId = overrides[0];
+  let start = 0;
+
+  for (let i = 1; i <= overrides.length; i++) {
+    const styleId = i < overrides.length ? overrides[i] : -1;
+    if (styleId !== currentStyleId || i === overrides.length) {
+      const text = characters.slice(start, i);
+      if (text) {
+        const segment: RichTextSegment = { text };
+        if (currentStyleId !== 0 && table[String(currentStyleId)]) {
+          const override = table[String(currentStyleId)];
+          const style: Record<string, any> = {};
+          if (override.fontFamily) style.font = override.fontFamily;
+          if (override.fontSize) style.size = override.fontSize;
+          if (override.fontWeight) style.weight = override.fontWeight;
+          if (override.letterSpacing) style.letterSpacing = override.letterSpacing;
+          if (override.lineHeightPx) style.lineHeight = override.lineHeightPx;
+          if (override.fills && override.fills.length > 0) {
+            const solidFill = override.fills.find((f: any) => f.type === "SOLID" && f.visible !== false);
+            if (solidFill && solidFill.color) {
+              style.color = colorToString(solidFill.color, solidFill.opacity);
+            }
+          }
+          if (override.textDecoration && override.textDecoration !== "NONE") {
+            style.decoration = override.textDecoration.toLowerCase();
+          }
+          if (Object.keys(style).length > 0) segment.style = style;
+        }
+        segments.push(segment);
+      }
+      start = i;
+      currentStyleId = styleId;
+    }
+  }
+
+  return segments.length > 0 ? segments : null;
+}
+
 interface SimplifiedNode {
   id: string;
   name: string;
@@ -136,6 +187,10 @@ interface SimplifiedNode {
   constraints?: { h: string; v: string };
   responsiveHint?: string;
   children?: SimplifiedNode[];
+  layoutAlign?: string;
+  imageScaleMode?: string;
+  fills?: (string | null)[];
+  richTextSegments?: RichTextSegment[];
 }
 
 interface ParsedEffect {
@@ -259,7 +314,12 @@ function inferFromStructure(node: FigmaNode): SemanticRole | null {
   return null;
 }
 
-export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: number = 10): SimplifiedNode | null {
+export function simplifyNode(
+  node: FigmaNode,
+  depth: number = 0,
+  maxDepth: number = 10,
+  parentBBox?: { x: number; y: number }
+): SimplifiedNode | null {
   if (depth > maxDepth) return null;
   if (!node) return null;
   if (SKIP_TYPES.has(node.type) && depth > 2) return null;
@@ -289,9 +349,13 @@ export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: numbe
 
   const fills = (node.fills || []).filter((f) => f.visible !== false);
   if (fills.length > 0) {
-    const solidFill = fills.find((f) => f.type === "SOLID");
-    if (solidFill && solidFill.color) {
-      result.fill = colorToString(solidFill.color, solidFill.opacity);
+    const solidFills = fills.filter((f) => f.type === "SOLID");
+    if (solidFills.length > 0) {
+      if (solidFills.length === 1) {
+        result.fill = colorToString(solidFills[0].color, solidFills[0].opacity);
+      } else {
+        result.fills = solidFills.map((f) => colorToString(f.color, f.opacity));
+      }
     }
     const gradients = fills.filter((f) => f.type?.startsWith("GRADIENT_"));
     if (gradients.length > 0) {
@@ -350,9 +414,11 @@ export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: numbe
     if (node.counterAxisSizingMode === "FIXED") result.layout.crossFixed = true;
   }
 
-  const inferredLayout = inferLayoutFromChildBounds(node);
-  if (inferredLayout) {
-    result.inferredLayout = inferredLayout;
+  if (!node.layoutMode || node.layoutMode === "NONE") {
+    const inferredLayout = inferLayoutFromChildBounds(node);
+    if (inferredLayout) {
+      result.inferredLayout = inferredLayout;
+    }
   }
 
   // Sizing mode (FILL/HUG/FIXED)
@@ -368,8 +434,9 @@ export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: numbe
   // Absolute positioning
   if (node.layoutPositioning === "ABSOLUTE") {
     result.position = "absolute";
-    if (bbox) {
-      const parentBbox = node.absoluteRenderBounds || bbox;
+    if (bbox && parentBBox) {
+      result.positionOffset = { x: Math.round(bbox.x - parentBBox.x), y: Math.round(bbox.y - parentBBox.y) };
+    } else if (bbox) {
       result.positionOffset = { x: Math.round(bbox.x), y: Math.round(bbox.y) };
     }
   }
@@ -377,6 +444,11 @@ export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: numbe
   // Flex grow
   if (node.layoutGrow && node.layoutGrow > 0) {
     result.flexGrow = node.layoutGrow;
+  }
+
+  // Layout align (STRETCH)
+  if (node.layoutAlign === "STRETCH") {
+    result.layoutAlign = "stretch";
   }
 
   // Min/max constraints
@@ -413,22 +485,37 @@ export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: numbe
   const imageFill = (node.fills || []).find((f) => f.type === "IMAGE" && f.visible !== false);
   if (imageFill && (imageFill as any).imageRef) {
     result.imageRef = (imageFill as any).imageRef;
+    if ((imageFill as any).scaleMode) {
+      result.imageScaleMode = (imageFill as any).scaleMode;
+    }
   }
 
   if (node.type === "TEXT") {
-    result.text = (node.characters || "").slice(0, 200);
+    result.text = node.characters || "";
     const style = node.style || {};
     result.textStyle = {};
     if (style.fontFamily) result.textStyle.font = style.fontFamily;
     if (style.fontSize) result.textStyle.size = style.fontSize;
     if (style.fontWeight) result.textStyle.weight = style.fontWeight;
-    if (style.lineHeightPx) result.textStyle.lineHeight = Math.round(style.lineHeightPx * 10) / 10;
+    if (style.lineHeightPx) result.textStyle.lineHeight = style.lineHeightPx;
     if (style.letterSpacing) result.textStyle.letterSpacing = style.letterSpacing;
     if (style.textAlignHorizontal) result.textStyle.align = style.textAlignHorizontal.toLowerCase();
 
     const textFills = (node.fills || []).filter((f) => f.visible !== false && f.type === "SOLID");
     if (textFills.length > 0) {
       result.textStyle.color = colorToString(textFills[0].color!, textFills[0].opacity);
+    }
+
+    // Rich text: characterStyleOverrides + styleOverrideTable
+    if (node.characterStyleOverrides && node.characterStyleOverrides.length > 0 && node.styleOverrideTable) {
+      const segments = parseRichTextSegments(
+        node.characters || "",
+        node.characterStyleOverrides,
+        node.styleOverrideTable
+      );
+      if (segments && segments.length > 1) {
+        result.richTextSegments = segments;
+      }
     }
 
     if (node.textTruncation === "ENDING") {
@@ -483,8 +570,9 @@ export function simplifyNode(node: FigmaNode, depth: number = 0, maxDepth: numbe
   }
 
   if (node.children && node.children.length > 0) {
+    const myBBox = bbox ? { x: bbox.x, y: bbox.y } : undefined;
     const children = node.children
-      .map((child) => simplifyNode(child, depth + 1, maxDepth))
+      .map((child) => simplifyNode(child, depth + 1, maxDepth, myBBox))
       .filter(Boolean) as SimplifiedNode[];
     if (children.length > 0) {
       result.children = children;
@@ -555,7 +643,8 @@ export function toCondensedFormat(
   depth: number = 0,
   maxDepth: number = 10,
   variableMap: Record<string, string> | null = null,
-  svgMap: CondensedSvgMap | null = null
+  svgMap: CondensedSvgMap | null = null,
+  parentBBox?: { x: number; y: number }
 ): string {
   if (depth > maxDepth) return "";
   if (!node) return "";
@@ -563,11 +652,14 @@ export function toCondensedFormat(
   if (node.visible === false) return "";
 
   const lines: string[] = [];
-  lines.push(toCondensedLine(node, depth, variableMap, svgMap));
+  lines.push(toCondensedLine(node, depth, variableMap, svgMap, parentBBox));
 
+  const myBBox = node.absoluteBoundingBox
+    ? { x: node.absoluteBoundingBox.x, y: node.absoluteBoundingBox.y }
+    : undefined;
   if (node.children) {
     for (const child of node.children) {
-      const childOutput = toCondensedFormat(child, depth + 1, maxDepth, variableMap, svgMap);
+      const childOutput = toCondensedFormat(child, depth + 1, maxDepth, variableMap, svgMap, myBBox);
       if (childOutput) lines.push(childOutput);
     }
   }
@@ -1018,7 +1110,8 @@ function toCondensedLine(
   node: FigmaNode,
   depth: number,
   variableMap: Record<string, string> | null,
-  svgMap: CondensedSvgMap | null
+  svgMap: CondensedSvgMap | null,
+  parentBBox?: { x: number; y: number }
 ): string {
   const indent = "  ".repeat(depth);
   const parts: string[] = [];
@@ -1041,16 +1134,28 @@ function toCondensedLine(
   if (svgRef?.path) parts.push(`svgPath:${quoteCondensedPath(svgRef.path)}`);
   if (svgRef?.href) parts.push(`svgHref:${quoteCondensedValue(svgRef.href)}`);
 
+  // Image scaleMode
+  const imgFill = (node.fills || []).find((f) => f.type === "IMAGE" && f.visible !== false);
+  if (imgFill && (imgFill as any).scaleMode) {
+    const scaleMap: Record<string, string> = { FILL: "cover", FIT: "contain", CROP: "cover", TILE: "repeat" };
+    const mapped = scaleMap[(imgFill as any).scaleMode] || (imgFill as any).scaleMode.toLowerCase();
+    parts.push(`img-fit:${mapped}`);
+  }
   const allFills = (node.fills || []).filter((f) => f.visible !== false);
   const solidFills = allFills.filter((f) => f.type === "SOLID");
   const gradientFills = allFills.filter((f) => f.type?.startsWith("GRADIENT_"));
 
   if (node.type !== "TEXT") {
     if (gradientFills.length > 0) {
-      const cssGradient = gradientToCSS(gradientFills[0]);
-      if (cssGradient) parts.push(`bg:${cssGradient}`);
-    } else if (solidFills.length > 0) {
-      parts.push(`bg:${colorToString(solidFills[0].color, solidFills[0].opacity)}`);
+      for (const gf of gradientFills) {
+        const cssGradient = gradientToCSS(gf);
+        if (cssGradient) parts.push(`bg:${cssGradient}`);
+      }
+    }
+    if (solidFills.length > 0) {
+      for (const sf of solidFills) {
+        parts.push(`bg:${colorToString(sf.color, sf.opacity)}`);
+      }
     }
   }
 
@@ -1058,9 +1163,13 @@ function toCondensedLine(
   if (effects) {
     for (const effect of effects) {
       if (effect.type === "drop-shadow") {
-        parts.push(`shadow:${effect.offset!.x},${effect.offset!.y},${effect.radius},${effect.color}`);
+        parts.push(
+          `shadow:${effect.offset!.x},${effect.offset!.y},${effect.radius},${effect.spread || 0},${effect.color}`
+        );
       } else if (effect.type === "inner-shadow") {
-        parts.push(`inner-shadow:${effect.offset!.x},${effect.offset!.y},${effect.radius},${effect.color}`);
+        parts.push(
+          `inner-shadow:${effect.offset!.x},${effect.offset!.y},${effect.radius},${effect.spread || 0},${effect.color}`
+        );
       } else if (effect.type === "blur") {
         parts.push(`blur:${effect.radius}`);
       } else if (effect.type === "backdrop-blur") {
@@ -1082,7 +1191,9 @@ function toCondensedLine(
 
   const strokes = (node.strokes || []).filter((s) => s.visible !== false);
   if (strokes.length > 0 && strokes[0].color) {
-    parts.push(`border:${node.strokeWeight || 1}px,${colorToString(strokes[0].color)}`);
+    const strokeAlign = node.strokeAlign || "CENTER";
+    const alignSuffix = strokeAlign !== "CENTER" ? `,${strokeAlign.toLowerCase()}` : "";
+    parts.push(`border:${node.strokeWeight || 1}px,${colorToString(strokes[0].color)}${alignSuffix}`);
   }
 
   if (node.layoutMode && node.layoutMode !== "NONE") {
@@ -1111,11 +1222,18 @@ function toCondensedLine(
   // Absolute positioning
   if (node.layoutPositioning === "ABSOLUTE") {
     parts.push("absolute");
-    if (bbox) parts.push(`xy:${Math.round(bbox.x)},${Math.round(bbox.y)}`);
+    if (bbox && parentBBox) {
+      parts.push(`xy:${Math.round(bbox.x - parentBBox.x)},${Math.round(bbox.y - parentBBox.y)}`);
+    } else if (bbox) {
+      parts.push(`xy:${Math.round(bbox.x)},${Math.round(bbox.y)}`);
+    }
   }
 
   // Flex grow
   if (node.layoutGrow && node.layoutGrow > 0) parts.push(`grow:${node.layoutGrow}`);
+
+  // Layout align
+  if (node.layoutAlign === "STRETCH") parts.push("stretch");
 
   // Overflow
   if (node.clipsContent) {
@@ -1141,11 +1259,13 @@ function toCondensedLine(
     parts.push(`stroke-${node.strokeAlign.toLowerCase()}`);
   }
 
-  const inferredLayout = inferLayoutFromChildBounds(node);
-  if (inferredLayout) {
-    parts.push(`inferred-${inferredLayout.mode}`);
-    if (inferredLayout.gap) parts.push(`inferred-gap:${inferredLayout.gap}`);
-    parts.push(`confidence:${inferredLayout.confidence}`);
+  if (!node.layoutMode) {
+    const inferredLayout = inferLayoutFromChildBounds(node);
+    if (inferredLayout) {
+      parts.push(`inferred-${inferredLayout.mode}`);
+      if (inferredLayout.gap) parts.push(`inferred-gap:${inferredLayout.gap}`);
+      parts.push(`confidence:${inferredLayout.confidence}`);
+    }
   }
 
   if (node.opacity !== undefined && node.opacity !== 1) {
@@ -1160,7 +1280,7 @@ function toCondensedLine(
     if (textParts.length > 0) parts.push(textParts.join(""));
 
     if (style.fontFamily) parts.push(`font:${style.fontFamily}`);
-    if (style.lineHeightPx) parts.push(`lh:${Math.round(style.lineHeightPx)}px`);
+    if (style.lineHeightPx) parts.push(`lh:${style.lineHeightPx}px`);
     if (style.letterSpacing) parts.push(`ls:${style.letterSpacing}`);
     if (style.textAlignHorizontal && style.textAlignHorizontal !== "LEFT") {
       parts.push(`align:${style.textAlignHorizontal.toLowerCase()}`);
@@ -1180,8 +1300,29 @@ function toCondensedLine(
       parts.push(`case:${node.textCase.toLowerCase()}`);
     }
 
-    const text = (node.characters || "").slice(0, 50);
+    const text = node.characters || "";
     if (text) parts.push(`"${text}"`);
+
+    // Rich text segments
+    if (node.characterStyleOverrides && node.characterStyleOverrides.length > 0 && node.styleOverrideTable) {
+      const segments = parseRichTextSegments(text, node.characterStyleOverrides, node.styleOverrideTable);
+      if (segments && segments.length > 1) {
+        const segParts = segments.map((seg) => {
+          let s = `"${seg.text}"`;
+          if (seg.style) {
+            const styleParts: string[] = [];
+            if (seg.style.font) styleParts.push(`font:${seg.style.font}`);
+            if (seg.style.size) styleParts.push(`${seg.style.size}px`);
+            if (seg.style.weight) styleParts.push(`w:${seg.style.weight}`);
+            if (seg.style.color) styleParts.push(seg.style.color);
+            if (seg.style.decoration) styleParts.push(seg.style.decoration);
+            if (styleParts.length > 0) s += `{${styleParts.join(",")}}`;
+          }
+          return s;
+        });
+        parts.push(`richtext:[${segParts.join("|")}]`);
+      }
+    }
   }
 
   if (hasImageFill(node) && node.type !== "IMAGE") {

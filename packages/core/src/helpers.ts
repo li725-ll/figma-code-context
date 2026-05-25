@@ -156,17 +156,22 @@ function appendFlexAlignment(lines: string[], node: any): void {
   }
 }
 
-export function nodeToCSS(node: any): string {
+export function nodeToCSS(node: any, parentBBox?: { x: number; y: number }): string {
   const lines: string[] = [];
   const bbox = node.absoluteBoundingBox;
 
   // Positioning
   if (node.layoutPositioning === "ABSOLUTE") {
     lines.push(`position: absolute;`);
-    if (bbox) {
+    if (bbox && parentBBox) {
+      lines.push(`left: ${Math.round(bbox.x - parentBBox.x)}px;`);
+      lines.push(`top: ${Math.round(bbox.y - parentBBox.y)}px;`);
+    } else if (bbox) {
       lines.push(`left: ${Math.round(bbox.x)}px;`);
       lines.push(`top: ${Math.round(bbox.y)}px;`);
     }
+  } else if (node.children?.some((c: any) => c.layoutPositioning === "ABSOLUTE")) {
+    lines.push(`position: relative;`);
   }
 
   // Sizing
@@ -198,10 +203,31 @@ export function nodeToCSS(node: any): string {
     lines.push(`flex-grow: ${node.layoutGrow};`);
   }
 
+  // Layout align (STRETCH)
+  if (node.layoutAlign === "STRETCH") {
+    lines.push(`align-self: stretch;`);
+  }
+
   const fills = (node.fills || []).filter((f: any) => f.visible !== false);
-  const fillCSS = fillsToCSS(fills);
-  for (const [prop, value] of Object.entries(fillCSS)) {
-    lines.push(`${prop}: ${value};`);
+  if (node.type === "TEXT") {
+    const solidFills = fills.filter((f: any) => f.type === "SOLID");
+    if (solidFills.length > 0 && solidFills[0].color) {
+      const c = solidFills[0].color;
+      const a = solidFills[0].opacity;
+      const hex = rgbToHex(c);
+      if (a !== undefined && a < 1) {
+        lines.push(
+          `color: rgba(${Math.round(c.r * 255)}, ${Math.round(c.g * 255)}, ${Math.round(c.b * 255)}, ${Math.round(a * 100) / 100});`
+        );
+      } else {
+        lines.push(`color: #${hex};`);
+      }
+    }
+  } else {
+    const fillCSS = fillsToCSS(fills);
+    for (const [prop, value] of Object.entries(fillCSS)) {
+      lines.push(`${prop}: ${value};`);
+    }
   }
 
   const effectCSS = effectsToCSS(node.effects);
@@ -225,6 +251,8 @@ export function nodeToCSS(node: any): string {
       const strokeAlign = node.strokeAlign || "CENTER";
       if (strokeAlign === "INSIDE") {
         lines.push(`box-shadow: inset 0 0 0 ${node.strokeWeight || 1}px #${rgbToHex(solidStrokes[0].color)};`);
+      } else if (strokeAlign === "OUTSIDE") {
+        lines.push(`box-shadow: 0 0 0 ${node.strokeWeight || 1}px #${rgbToHex(solidStrokes[0].color)};`);
       } else {
         lines.push(`border: ${node.strokeWeight || 1}px solid #${rgbToHex(solidStrokes[0].color)};`);
       }
@@ -294,6 +322,19 @@ export function nodeToCSS(node: any): string {
     lines.push(`mix-blend-mode: ${node.blendMode.toLowerCase().replace(/_/g, "-")};`);
   }
 
+  // Image scaleMode → object-fit
+  const imgFill = (node.fills || []).find((f: any) => f.type === "IMAGE" && f.visible !== false);
+  if (imgFill && (imgFill as any).scaleMode) {
+    const scaleMap: Record<string, string> = { FILL: "cover", FIT: "contain", CROP: "cover", TILE: "repeat" };
+    const fit = scaleMap[(imgFill as any).scaleMode] || "cover";
+    if (fit !== "repeat") {
+      lines.push(`object-fit: ${fit};`);
+    } else {
+      lines.push(`background-size: auto;`);
+      lines.push(`background-repeat: repeat;`);
+    }
+  }
+
   if (node.type === "TEXT" && node.style) {
     const s = node.style;
     if (s.fontFamily) lines.push(`font-family: "${s.fontFamily}";`);
@@ -333,33 +374,44 @@ export function nodeToCSS(node: any): string {
   return `/* ${node.name} */\n.${toCSSClass(node.name)} {\n  ${lines.join("\n  ")}\n}`;
 }
 
-export function nodeToCSSRecursive(node: any, depth: number = 0, maxDepth: number = 8): string {
+export function nodeToCSSRecursive(
+  node: any,
+  depth: number = 0,
+  maxDepth: number = 8,
+  parentBBox?: { x: number; y: number }
+): string {
   if (!node || depth > maxDepth) return "";
   if (node.visible === false) return "";
 
-  let output = nodeToCSS(node) + "\n\n";
+  let output = nodeToCSS(node, parentBBox) + "\n\n";
 
+  const myBBox = node.absoluteBoundingBox;
   if (node.children) {
     for (const child of node.children) {
       if (child.visible === false) continue;
-      output += nodeToCSSRecursive(child, depth + 1, maxDepth);
+      output += nodeToCSSRecursive(child, depth + 1, maxDepth, myBBox);
     }
   }
 
   return output;
 }
 
-export function nodeToTailwind(node: any): string {
+export function nodeToTailwind(node: any, parentBBox?: { x: number; y: number }): string {
   const classes: string[] = [];
   const bbox = node.absoluteBoundingBox;
 
   // Positioning
   if (node.layoutPositioning === "ABSOLUTE") {
     classes.push("absolute");
-    if (bbox) {
+    if (bbox && parentBBox) {
+      classes.push(`left-[${Math.round(bbox.x - parentBBox.x)}px]`);
+      classes.push(`top-[${Math.round(bbox.y - parentBBox.y)}px]`);
+    } else if (bbox) {
       classes.push(`left-[${Math.round(bbox.x)}px]`);
       classes.push(`top-[${Math.round(bbox.y)}px]`);
     }
+  } else if (node.children?.some((c: any) => c.layoutPositioning === "ABSOLUTE")) {
+    classes.push("relative");
   }
 
   // Sizing
@@ -388,6 +440,9 @@ export function nodeToTailwind(node: any): string {
 
   // Flex grow
   if (node.layoutGrow && node.layoutGrow > 0) classes.push("grow");
+
+  // Layout align (STRETCH)
+  if (node.layoutAlign === "STRETCH") classes.push("self-stretch");
 
   const fills = (node.fills || []).filter((f: any) => f.visible !== false);
   const solidFills = fills.filter((f: any) => f.type === "SOLID");
@@ -493,6 +548,15 @@ export function nodeToTailwind(node: any): string {
     classes.push(`mix-blend-${node.blendMode.toLowerCase().replace(/_/g, "-")}`);
   }
 
+  // Image scaleMode → object-fit
+  const imgFillTw = (node.fills || []).find((f: any) => f.type === "IMAGE" && f.visible !== false);
+  if (imgFillTw && (imgFillTw as any).scaleMode) {
+    const scaleMap: Record<string, string> = { FILL: "cover", FIT: "contain", CROP: "cover", TILE: "repeat" };
+    const fit = scaleMap[(imgFillTw as any).scaleMode] || "cover";
+    if (fit === "cover") classes.push("object-cover");
+    else if (fit === "contain") classes.push("object-contain");
+  }
+
   // Text
   if (node.type === "TEXT" && node.style) {
     const s = node.style;
@@ -530,7 +594,7 @@ export function nodeToTailwind(node: any): string {
   }
 
   if (node.opacity !== undefined && node.opacity !== 1) {
-    classes.push(`opacity-[${Math.round(node.opacity * 100)}]`);
+    classes.push(`opacity-[${Math.round(node.opacity * 100) / 100}]`);
   }
 
   return classes.join(" ");
@@ -593,12 +657,17 @@ export function searchNodes(
   return results;
 }
 
-export function nodeToTailwindRecursive(node: any, depth: number = 0, maxDepth: number = 8): string {
+export function nodeToTailwindRecursive(
+  node: any,
+  depth: number = 0,
+  maxDepth: number = 8,
+  parentBBox?: { x: number; y: number }
+): string {
   if (!node || depth > maxDepth) return "";
   if (node.visible === false) return "";
 
   const indent = "  ".repeat(depth);
-  const classes = nodeToTailwind(node);
+  const classes = nodeToTailwind(node, parentBBox);
   const semantic = inferSemanticRole(node);
   const tag = semantic?.html || "div";
 
@@ -614,10 +683,11 @@ export function nodeToTailwindRecursive(node: any, depth: number = 0, maxDepth: 
     return output;
   }
 
+  const myBBox = node.absoluteBoundingBox;
   output += `>\n`;
   for (const child of node.children) {
     if (child.visible === false) continue;
-    output += nodeToTailwindRecursive(child, depth + 1, maxDepth);
+    output += nodeToTailwindRecursive(child, depth + 1, maxDepth, myBBox);
   }
   output += `${indent}</${tag}>\n`;
 
