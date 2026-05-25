@@ -1,4 +1,9 @@
 import { defineConfig } from "tsup";
+import { copyFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   entry: {
@@ -13,4 +18,7 @@ export default defineConfig({
   dts: false,
   noExternal: ["@figma/client", "@figma/core"],
   external: ["@modelcontextprotocol/sdk", "zod"],
+  onSuccess: async () => {
+    copyFileSync(resolve(__dirname, "../../README.md"), resolve(__dirname, "README.md"));
+  },
 });
