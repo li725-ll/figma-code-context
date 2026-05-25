@@ -1,5 +1,11 @@
 # figma-code-context
 
+## 1.5.3
+
+### Minor Changes
+
+- Add gen-app skill: one-command full design-to-code pipeline with automated quality verification
+
 ## 1.5.2
 
 ### Patch Changes
