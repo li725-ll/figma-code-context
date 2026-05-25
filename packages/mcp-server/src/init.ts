@@ -22,9 +22,9 @@ function getMcpServerCommand(): string {
   try {
     const pkg = JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf-8"));
     const binName = Object.keys(pkg.bin || {})[0];
-    return binName || "figma-ai-context";
+    return binName || "figma-code-context";
   } catch {
-    return "figma-ai-context";
+    return "figma-code-context";
   }
 }
 
@@ -83,7 +83,7 @@ function copySkills(projectRoot: string): string[] {
     const content = readFileSync(src, "utf-8");
     const pkg = JSON.parse(readFileSync(PACKAGE_JSON_PATH, "utf-8"));
     const version = pkg.version || "unknown";
-    const header = `<!-- figma-ai-context v${version} -->\n`;
+    const header = `<!-- figma-code-context v${version} -->\n`;
 
     const dest = path.join(targetDir, file);
     writeFileSync(dest, header + content, "utf-8");
@@ -98,7 +98,7 @@ function main() {
 
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`
-figma-ai-init - 安装 Figma AI skills 到当前项目
+figma-ai-init - 安装 Figma Code Context skills 到当前项目
 
 用法:
   npx figma-ai-init [选项]
