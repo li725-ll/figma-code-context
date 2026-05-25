@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -30,6 +33,25 @@ import {
   searchNodes,
 } from "@figma/core";
 import { diffNodes, formatDiffOutput } from "@figma/core";
+
+// Load .env from monorepo root
+const __mcp_dirname = path.dirname(fileURLToPath(import.meta.url));
+const MONOREPO_ROOT = path.resolve(__mcp_dirname, "../../..");
+try {
+  const envPath = path.join(MONOREPO_ROOT, ".env");
+  const envContent = readFileSync(envPath, "utf-8");
+  for (const line of envContent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const value = trimmed.slice(eqIdx + 1).trim();
+    if (!process.env[key]) process.env[key] = value;
+  }
+} catch {
+  // .env file not found, rely on environment variables
+}
 
 if (!process.env.FIGMA_TOKEN) {
   process.stderr.write(

@@ -3,6 +3,7 @@
 import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { FigmaClient, FigmaApiError } from "@figma/client";
 import {
@@ -19,6 +20,25 @@ import { SvgExporter } from "./svg-exporter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..");
+const MONOREPO_ROOT = path.resolve(PROJECT_ROOT, "../..");
+
+// Load .env from monorepo root
+try {
+  const envPath = path.join(MONOREPO_ROOT, ".env");
+  const envContent = readFileSync(envPath, "utf-8");
+  for (const line of envContent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const value = trimmed.slice(eqIdx + 1).trim();
+    if (!process.env[key]) process.env[key] = value;
+  }
+} catch {
+  // .env file not found, rely on environment variables
+}
+
 const WEB_ROOT = path.join(PROJECT_ROOT, "debug-web");
 const HOST = "127.0.0.1";
 const DEFAULT_PORT = parseInt(process.env.DEBUG_WEB_PORT || "3333", 10);
