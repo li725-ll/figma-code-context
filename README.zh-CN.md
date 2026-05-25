@@ -15,7 +15,7 @@
 ### 安装到你的项目
 
 ```bash
-npx figma-code-init --dir /path/to/your/project
+npx figma-code-context init --dir /path/to/your/project
 ```
 
 这会：

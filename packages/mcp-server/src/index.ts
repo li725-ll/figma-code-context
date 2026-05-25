@@ -1009,5 +1009,12 @@ server.registerTool(
 
 registerPrompts(server);
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
+// Handle "init" subcommand: npx figma-code-context init [--dir <path>] [--skip-mcp]
+const args = process.argv.slice(2);
+if (args[0] === "init") {
+  const initModule = await import("./init-run.js");
+  initModule.run(args.slice(1));
+} else {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}

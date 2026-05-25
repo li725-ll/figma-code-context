@@ -9,6 +9,7 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     init: "src/init.ts",
+    "init-run": "src/init-run.ts",
   },
   format: ["esm"],
   target: "node18",
