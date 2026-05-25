@@ -1,5 +1,11 @@
 # figma-code-context
 
+## 1.5.1
+
+### Patch Changes
+
+- Fix: init subcommand no longer requires FIGMA_TOKEN to be set
+
 ## 1.5.0
 
 ### Minor Changes
