@@ -11,9 +11,19 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 - **全程自主决策**，不中断用户（除非遇到无法推断的关键选择）
 - **严格依赖顺序**：tokens → 共享组件 → 页面
 - **先框架后细节**：先搭建完整骨架，再逐步填充
+- **精度递进**：骨架(低) → 轮廓(中) → 细节(高) → 精修(最高)，每阶段用对应精度的工具
 - **每个任务三步循环**：规划 → 开发 → 验证
 - **闭环**：验证不通过 → 自动修复 → 重新验证，直到通过
 - **最终整体验证**：所有任务完成后，再做一次全量校验
+
+### 精度递进策略
+
+| 阶段         | 目标       | 工具 + 参数                                                                                                       | 信息密度               |
+| ------------ | ---------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Round 1 骨架 | 页面级布局 | `get_file_structure` + `get_node(condensed, depth:3)`                                                             | 低 — 只看顶层区块      |
+| Round 2 轮廓 | 组件级结构 | `get_node(condensed, depth:10)` / `get_page_for_codegen`                                                          | 中 — 完整节点树        |
+| Round 3 细节 | 精确样式值 | `get_node_css(precision:"standard", recursive:true)`                                                              | 高 — 精确数值          |
+| Round 4 精修 | 像素级校验 | `get_node_css(precision:"pixel-perfect", recursive:true)` + `get_node(json, precision:"pixel-perfect", depth:15)` | 最高 — 完整属性+富文本 |
 
 ---
 
@@ -80,6 +90,7 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 ## 阶段 2：基础设施 + 骨架（Round 1）
 
 目标：搭建完整骨架，所有路由可访问，构建通过。
+精度：**低** — 只需了解页面级布局结构，不需要节点细节。
 
 ### 2.1 同步 Design Tokens
 
@@ -101,6 +112,11 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 - 安装必要依赖
 
 ### 2.3 创建所有页面空壳
+
+获取每个页面的顶层结构：
+
+- 调用 `get_node`（format: "condensed", depth: 3）— 只看顶层区块划分
+- 推断页面布局方式（Header + Content + Footer？Sidebar + Main？）
 
 为每个页面创建文件，内容仅包含：
 
@@ -133,6 +149,7 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 ## 阶段 3：结构填充（Round 2）
 
 目标：所有组件和页面有完整的 DOM 结构，布局正确。
+精度：**中** — 需要完整节点树，但不需要精确样式值。
 
 ### 3.1 填充共享组件
 
@@ -140,7 +157,7 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 
 **规划：**
 
-- 调用 `get_node` 获取组件数据（format: "condensed", depth: 10）
+- 调用 `get_node`（format: "condensed", depth: 10）获取完整节点树
 - 如果是 COMPONENT_SET，调用 `get_component_variants` 获取变体
 - 分析结构：子节点层级、布局方式、内容类型
 
@@ -163,7 +180,7 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 
 **规划：**
 
-- 调用 `get_page_for_codegen` 获取页面上下文
+- 调用 `get_page_for_codegen` 获取页面上下文（含结构+token+组件信息）
 - 识别页面中使用的共享组件 → 直接 import
 - 识别页面专属 UI 单元 → 决定是否提取为子组件
 
@@ -204,6 +221,7 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 ## 阶段 4：样式填充（Round 3）
 
 目标：应用精确样式，视觉基本还原设计稿。
+精度：**高** — 需要精确的数值（间距、颜色、字体），但不需要像素级完美。
 
 ### 4.1 应用 Design Tokens
 
@@ -218,7 +236,7 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 
 **规划：**
 
-- 调用 `get_node_css`（mode: 项目样式方案, recursive: true）获取样式
+- 调用 `get_node_css`（mode: 项目样式方案, precision: "standard", recursive: true）获取样式
 
 **开发：**
 
@@ -253,22 +271,25 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 ## 阶段 5：精修闭环（Round 4）
 
 目标：像素级精确，资源完整，最终交付。
+精度：**最高** — 使用 pixel-perfect 模式获取完整属性，包括富文本段落样式。
 
 ### 5.1 Pixel-Perfect 校验
 
 对每个页面和关键组件执行：
 
 1. 调用 `get_node_css`（precision: "pixel-perfect", recursive: true）
-2. 逐属性对比生成代码 vs 设计稿：
+2. 调用 `get_node`（format: "json", precision: "pixel-perfect", depth: 15）获取完整原始数据（含 richtext 段落信息）
+3. 逐属性对比生成代码 vs 设计稿：
    - 颜色值是否完全一致？
    - 间距是否精确到 px？
    - 字体属性是否完整？
    - 布局行为是否正确（flex 方向、对齐、sizing 策略）？
    - 圆角是否四角独立且精确？
    - 阴影参数是否完整？
-3. 发现偏差 → 自动修复（只改有偏差的属性，不动其他代码）
-4. 修复后重新校验
-5. 最多 3 轮，仍有偏差则记录到报告
+   - 富文本是否正确分段渲染（不同样式的 span）？
+4. 发现偏差 → 自动修复（只改有偏差的属性，不动其他代码）
+5. 修复后重新校验
+6. 最多 3 轮，仍有偏差则记录到报告
 
 ### 5.2 资源完整性检查
 

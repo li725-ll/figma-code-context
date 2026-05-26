@@ -120,7 +120,8 @@ if (args[0] === "init") {
   server.registerTool(
     "get_file_structure",
     {
-      description: "获取 Figma 文件的页面和顶层 frame 结构概览，适合了解文件整体组织",
+      description:
+        "获取 Figma 文件的页面和顶层 frame 结构概览。这是最粗粒度的视图，作为探索文件的第一步使用，之后用 search_nodes 或 get_node 深入具体区域",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
       },
@@ -161,7 +162,8 @@ if (args[0] === "init") {
   server.registerTool(
     "get_texts",
     {
-      description: "从 Figma 地址或文件中提取所有文字内容，支持直接传入 Figma URL",
+      description:
+        "从 Figma 地址或文件中提取所有文字内容，支持直接传入 Figma URL。仅需文本/文案时使用（如 i18n 提取、内容审查），如需结构+文本一起获取，使用 get_node",
       inputSchema: {
         url: z.string().optional().describe("Figma 文件/节点 URL，如 https://www.figma.com/design/xxx/yyy?node-id=1-2"),
         fileKey: z.string().optional().describe("Figma 文件 Key（与 url 二选一）"),
@@ -228,7 +230,7 @@ if (args[0] === "init") {
     "get_node",
     {
       description:
-        "获取指定节点的 AI 友好数据，支持 JSON 和压缩文本两种格式。压缩格式节省 60%+ token，推荐用于代码生成场景",
+        "获取指定节点的 AI 友好数据，支持 JSON 和压缩文本两种格式。condensed 格式受 maxTokens 预算控制（默认 4000），推荐用于结构探索和代码生成。json 格式无预算限制，可能返回大量数据，仅在需要完整原始属性时使用",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
         nodeId: z.string().describe("节点 ID，格式如 '312:33667' 或 '312-33667'"),
@@ -303,7 +305,7 @@ if (args[0] === "init") {
             }
           }
 
-          const condensed = toCondensedWithBudget(nodeData.document, maxTokens, variableMap, svgMap);
+          const condensed = toCondensedWithBudget(nodeData.document, maxTokens, variableMap, svgMap, precision);
 
           let varSection = "";
           const nodeVarMap = buildVariableMapFromNodes(nodeData.document);
@@ -414,7 +416,8 @@ if (args[0] === "init") {
   server.registerTool(
     "get_components",
     {
-      description: "获取文件中所有组件的列表和基本信息",
+      description:
+        "获取文件中所有组件的列表和基本信息。返回扁平列表，如需按名称查找特定组件用 search_nodes(type:'COMPONENT')，如需获取变体详情用 get_component_variants",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
       },
@@ -508,7 +511,8 @@ if (args[0] === "init") {
   server.registerTool(
     "get_variables",
     {
-      description: "获取文件的 Variables（设计变量/token），包含颜色、数值等",
+      description:
+        "获取文件的 Variables（设计变量/token），包含颜色、数值等。注意：get_page_for_codegen 已包含 variables，仅在只需要 token 而不需要节点结构时单独使用（如 token 同步工作流）",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
       },
@@ -615,7 +619,8 @@ if (args[0] === "init") {
   server.registerTool(
     "get_node_css",
     {
-      description: "将节点转换为 CSS 或 Tailwind 类名，支持递归生成整个组件树的样式",
+      description:
+        "将节点转换为 CSS 或 Tailwind 类名，支持递归生成整个组件树的样式。适用于样式精修阶段（结构代码已生成后）。初始代码生成阶段优先使用 get_node(condensed) 获取结构",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
         nodeId: z.string().describe("节点 ID"),
@@ -641,11 +646,27 @@ if (args[0] === "init") {
         const nodeData = data.nodes[normalizedId];
         if (!nodeData) return { content: [{ type: "text" as const, text: `节点 ${normalizedId} 不存在` }] };
 
+        // Build variable map for token references
+        let variableMap: Record<string, string> | null = null;
+        try {
+          const fileData = (await figma.getFile(fileKey, { depth: 0 })) as any;
+          if (fileData) {
+            variableMap = buildVariableMap(fileData);
+          }
+        } catch (_) {
+          /* variable map is optional */
+        }
+
+        const options = { precision, variableMap };
         let output: string;
         if (mode === "tailwind") {
-          output = recursive ? nodeToTailwindRecursive(nodeData.document, 0) : nodeToTailwind(nodeData.document);
+          output = recursive
+            ? nodeToTailwindRecursive(nodeData.document, 0, 8, undefined, options)
+            : nodeToTailwind(nodeData.document, undefined, options);
         } else {
-          output = recursive ? nodeToCSSRecursive(nodeData.document, 0) : nodeToCSS(nodeData.document);
+          output = recursive
+            ? nodeToCSSRecursive(nodeData.document, 0, 8, undefined, options)
+            : nodeToCSS(nodeData.document, undefined, options);
         }
 
         return {
@@ -660,7 +681,8 @@ if (args[0] === "init") {
   server.registerTool(
     "get_images",
     {
-      description: "获取指定节点的图片导出 URL（PNG/SVG/PDF）",
+      description:
+        "获取指定节点的图片导出 URL（PNG/SVG/PDF）。返回下载 URL（调用方需自行获取内容）。对于需要保存为本地 SVG 文件的图标/矢量图，使用 export_svg",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
         nodeIds: z.array(z.string()).describe("节点 ID 数组"),
@@ -686,7 +708,8 @@ if (args[0] === "init") {
   server.registerTool(
     "export_svg",
     {
-      description: "导出指定节点为 SVG 格式，下载 SVG 内容并保存到临时目录。适用于导出图标、矢量图形等",
+      description:
+        "导出指定节点为 SVG 格式，下载 SVG 内容并保存到临时目录。适用于导出图标、矢量图形等。对于光栅图片（照片、截图），使用 get_images 配合 png/jpg 格式",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
         nodeIds: z.array(z.string()).describe("要导出的节点 ID 数组"),
@@ -730,7 +753,8 @@ if (args[0] === "init") {
   server.registerTool(
     "get_versions",
     {
-      description: "获取文件的版本历史列表,包含版本 ID、创建时间、描述等信息",
+      description:
+        "获取文件的版本历史列表,包含版本 ID、创建时间、描述等信息。用于比较设计随时间的变化，是 diff_nodes 快照模式的前置步骤",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
       },
@@ -871,7 +895,8 @@ if (args[0] === "init") {
   server.registerTool(
     "get_icons_index",
     {
-      description: "获取当前会话中已导出的所有图标/SVG 的汇总索引",
+      description:
+        "获取当前会话中已导出的所有图标/SVG 的汇总索引。查询会话本地状态（无 Figma API 调用），返回本次会话中已通过 get_node 或 export_svg 导出的图标，避免重复导出",
     },
     async () => {
       const index = tempManager.getIconsIndex();
@@ -894,7 +919,8 @@ if (args[0] === "init") {
   server.registerTool(
     "get_page_for_codegen",
     {
-      description: "一站式获取代码生成所需的完整上下文：压缩格式结构 + design tokens + 组件定义 + 颜色/字体规范",
+      description:
+        "一站式获取代码生成所需的完整上下文：压缩格式结构 + design tokens + 组件定义 + 颜色/字体规范。适用于生成整页或复杂组件时一次性获取所有信息，对于单个简单组件优先使用 get_node，不适用于像素级精修阶段",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
         nodeId: z.string().describe("目标节点/页面 ID"),

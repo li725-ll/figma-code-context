@@ -39,7 +39,7 @@ export {
   nodeToTailwindRecursive,
   searchNodes,
 } from "./helpers.js";
-export type { ExtractedText, SearchResult } from "./helpers.js";
+export type { ExtractedText, SearchResult, CSSGenOptions } from "./helpers.js";
 
 export { diffNodes, formatDiffOutput } from "./diff.js";
 export type { DiffEntry } from "./diff.js";

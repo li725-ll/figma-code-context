@@ -621,21 +621,24 @@ export function toCondensedWithBudget(
   node: FigmaNode,
   maxTokens: number = 4000,
   variableMap: Record<string, string> | null = null,
-  svgMap: CondensedSvgMap | null = null
+  svgMap: CondensedSvgMap | null = null,
+  precision?: string
 ): string {
   const maxChars = maxTokens * 4;
 
-  const full = toCondensedFormat(node, 0, 15, variableMap, svgMap);
+  const full = toCondensedFormat(node, 0, 15, variableMap, svgMap, undefined, precision);
   if (full.length <= maxChars) return full;
 
   for (let depth = 10; depth >= 2; depth--) {
-    const result = toCondensedFormat(node, 0, depth, variableMap, svgMap);
+    const result = toCondensedFormat(node, 0, depth, variableMap, svgMap, undefined, precision);
     if (result.length <= maxChars) {
       return result + `\n  ... (已截断，深度限制: ${depth}，完整节点树更深)`;
     }
   }
 
-  return toCondensedFormat(node, 0, 2, variableMap, svgMap) + `\n  ... (节点树过大，仅展示前 2 层)`;
+  return (
+    toCondensedFormat(node, 0, 2, variableMap, svgMap, undefined, precision) + `\n  ... (节点树过大，仅展示前 2 层)`
+  );
 }
 
 export function toCondensedFormat(
@@ -644,7 +647,8 @@ export function toCondensedFormat(
   maxDepth: number = 10,
   variableMap: Record<string, string> | null = null,
   svgMap: CondensedSvgMap | null = null,
-  parentBBox?: { x: number; y: number }
+  parentBBox?: { x: number; y: number },
+  precision?: string
 ): string {
   if (depth > maxDepth) return "";
   if (!node) return "";
@@ -652,14 +656,14 @@ export function toCondensedFormat(
   if (node.visible === false) return "";
 
   const lines: string[] = [];
-  lines.push(toCondensedLine(node, depth, variableMap, svgMap, parentBBox));
+  lines.push(toCondensedLine(node, depth, variableMap, svgMap, parentBBox, precision));
 
   const myBBox = node.absoluteBoundingBox
     ? { x: node.absoluteBoundingBox.x, y: node.absoluteBoundingBox.y }
     : undefined;
   if (node.children) {
     for (const child of node.children) {
-      const childOutput = toCondensedFormat(child, depth + 1, maxDepth, variableMap, svgMap, myBBox);
+      const childOutput = toCondensedFormat(child, depth + 1, maxDepth, variableMap, svgMap, myBBox, precision);
       if (childOutput) lines.push(childOutput);
     }
   }
@@ -1111,7 +1115,8 @@ function toCondensedLine(
   depth: number,
   variableMap: Record<string, string> | null,
   svgMap: CondensedSvgMap | null,
-  parentBBox?: { x: number; y: number }
+  parentBBox?: { x: number; y: number },
+  precision?: string
 ): string {
   const indent = "  ".repeat(depth);
   const parts: string[] = [];
@@ -1141,21 +1146,27 @@ function toCondensedLine(
     const mapped = scaleMap[(imgFill as any).scaleMode] || (imgFill as any).scaleMode.toLowerCase();
     parts.push(`img-fit:${mapped}`);
   }
+
+  // Aspect ratio for image nodes
+  if (imgFill && node.absoluteBoundingBox) {
+    const { width, height } = node.absoluteBoundingBox;
+    if (width && height) {
+      const ratio = Math.round((width / height) * 100) / 100;
+      parts.push(`ratio:${ratio}`);
+    }
+  }
   const allFills = (node.fills || []).filter((f) => f.visible !== false);
   const solidFills = allFills.filter((f) => f.type === "SOLID");
   const gradientFills = allFills.filter((f) => f.type?.startsWith("GRADIENT_"));
 
   if (node.type !== "TEXT") {
     if (gradientFills.length > 0) {
-      for (const gf of gradientFills) {
-        const cssGradient = gradientToCSS(gf);
-        if (cssGradient) parts.push(`bg:${cssGradient}`);
-      }
-    }
-    if (solidFills.length > 0) {
-      for (const sf of solidFills) {
-        parts.push(`bg:${colorToString(sf.color, sf.opacity)}`);
-      }
+      const gf = gradientFills[gradientFills.length - 1];
+      const cssGradient = gradientToCSS(gf);
+      if (cssGradient) parts.push(`bg:${cssGradient}`);
+    } else if (solidFills.length > 0) {
+      const sf = solidFills[solidFills.length - 1];
+      parts.push(`bg:${colorToString(sf.color, sf.opacity)}`);
     }
   }
 
@@ -1210,7 +1221,15 @@ function toCondensedLine(
     const crossAlign = mapAlign(node.counterAxisAlignItems);
     if (crossAlign && crossAlign !== "start") parts.push(`cross:${crossAlign}`);
 
-    if (node.layoutWrap === "WRAP") parts.push("wrap");
+    if (node.layoutWrap === "WRAP") {
+      parts.push("wrap");
+      if (node.counterAxisSpacing && node.counterAxisSpacing !== node.itemSpacing) {
+        parts.push(`row-gap:${node.counterAxisSpacing}`);
+      }
+      if (node.counterAxisAlignContent && node.counterAxisAlignContent !== "AUTO") {
+        parts.push(`content:${node.counterAxisAlignContent.toLowerCase().replace(/_/g, "-")}`);
+      }
+    }
   }
 
   // Sizing mode
@@ -1300,11 +1319,16 @@ function toCondensedLine(
       parts.push(`case:${node.textCase.toLowerCase()}`);
     }
 
-    const text = node.characters || "";
+    const text = (node.characters || "").slice(0, 80);
     if (text) parts.push(`"${text}"`);
 
-    // Rich text segments
-    if (node.characterStyleOverrides && node.characterStyleOverrides.length > 0 && node.styleOverrideTable) {
+    // Rich text segments — only in pixel-perfect mode
+    if (
+      precision === "pixel-perfect" &&
+      node.characterStyleOverrides &&
+      node.characterStyleOverrides.length > 0 &&
+      node.styleOverrideTable
+    ) {
       const segments = parseRichTextSegments(text, node.characterStyleOverrides, node.styleOverrideTable);
       if (segments && segments.length > 1) {
         const segParts = segments.map((seg) => {

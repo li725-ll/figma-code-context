@@ -7,6 +7,12 @@ import {
   inferSemanticRole,
 } from "./transformer.js";
 
+export interface CSSGenOptions {
+  precision?: string;
+  zIndex?: number;
+  variableMap?: Record<string, string> | null;
+}
+
 export interface ExtractedText {
   path: string;
   text: string;
@@ -133,6 +139,21 @@ export function toCSSClass(name: string): string {
   );
 }
 
+function resolveColorToken(node: any, prop: string, options?: CSSGenOptions): string | null {
+  if (!options?.variableMap || !node.boundVariables) return null;
+  const binding = node.boundVariables[prop];
+  if (!binding) return null;
+  // boundVariables.fills can be an array of bindings
+  const bindings = Array.isArray(binding) ? binding : [binding];
+  for (const b of bindings) {
+    const id = b?.id || b;
+    if (typeof id === "string" && options.variableMap[id]) {
+      return `var(${options.variableMap[id]})`;
+    }
+  }
+  return null;
+}
+
 function appendFlexAlignment(lines: string[], node: any): void {
   const mainMap: Record<string, string> = {
     MIN: "flex-start",
@@ -156,19 +177,24 @@ function appendFlexAlignment(lines: string[], node: any): void {
   }
 }
 
-export function nodeToCSS(node: any, parentBBox?: { x: number; y: number }): string {
+export function nodeToCSS(node: any, parentBBox?: { x: number; y: number }, options?: CSSGenOptions): string {
   const lines: string[] = [];
   const bbox = node.absoluteBoundingBox;
+  const pp = options?.precision === "pixel-perfect";
+  const round = (v: number) => (pp ? Math.round(v * 10) / 10 : Math.round(v));
 
   // Positioning
   if (node.layoutPositioning === "ABSOLUTE") {
     lines.push(`position: absolute;`);
+    if (options?.zIndex != null) {
+      lines.push(`z-index: ${options.zIndex};`);
+    }
     if (bbox && parentBBox) {
-      lines.push(`left: ${Math.round(bbox.x - parentBBox.x)}px;`);
-      lines.push(`top: ${Math.round(bbox.y - parentBBox.y)}px;`);
+      lines.push(`left: ${round(bbox.x - parentBBox.x)}px;`);
+      lines.push(`top: ${round(bbox.y - parentBBox.y)}px;`);
     } else if (bbox) {
-      lines.push(`left: ${Math.round(bbox.x)}px;`);
-      lines.push(`top: ${Math.round(bbox.y)}px;`);
+      lines.push(`left: ${round(bbox.x)}px;`);
+      lines.push(`top: ${round(bbox.y)}px;`);
     }
   } else if (node.children?.some((c: any) => c.layoutPositioning === "ABSOLUTE")) {
     lines.push(`position: relative;`);
@@ -181,14 +207,14 @@ export function nodeToCSS(node: any, parentBBox?: { x: number; y: number }): str
     } else if (node.layoutSizingHorizontal === "HUG") {
       lines.push(`width: fit-content;`);
     } else {
-      lines.push(`width: ${Math.round(bbox.width)}px;`);
+      lines.push(`width: ${round(bbox.width)}px;`);
     }
     if (node.layoutSizingVertical === "FILL") {
       lines.push(`align-self: stretch;`);
     } else if (node.layoutSizingVertical === "HUG") {
       lines.push(`height: fit-content;`);
     } else {
-      lines.push(`height: ${Math.round(bbox.height)}px;`);
+      lines.push(`height: ${round(bbox.height)}px;`);
     }
   }
 
@@ -211,7 +237,10 @@ export function nodeToCSS(node: any, parentBBox?: { x: number; y: number }): str
   const fills = (node.fills || []).filter((f: any) => f.visible !== false);
   if (node.type === "TEXT") {
     const solidFills = fills.filter((f: any) => f.type === "SOLID");
-    if (solidFills.length > 0 && solidFills[0].color) {
+    const tokenColor = resolveColorToken(node, "fills", options);
+    if (tokenColor) {
+      lines.push(`color: ${tokenColor};`);
+    } else if (solidFills.length > 0 && solidFills[0].color) {
       const c = solidFills[0].color;
       const a = solidFills[0].opacity;
       const hex = rgbToHex(c);
@@ -224,9 +253,14 @@ export function nodeToCSS(node: any, parentBBox?: { x: number; y: number }): str
       }
     }
   } else {
-    const fillCSS = fillsToCSS(fills);
-    for (const [prop, value] of Object.entries(fillCSS)) {
-      lines.push(`${prop}: ${value};`);
+    const tokenBg = resolveColorToken(node, "fills", options);
+    if (tokenBg) {
+      lines.push(`background-color: ${tokenBg};`);
+    } else {
+      const fillCSS = fillsToCSS(fills);
+      for (const [prop, value] of Object.entries(fillCSS)) {
+        lines.push(`${prop}: ${value};`);
+      }
     }
   }
 
@@ -281,13 +315,47 @@ export function nodeToCSS(node: any, parentBBox?: { x: number; y: number }): str
     lines.push(`display: flex;`);
     lines.push(`flex-direction: row;`);
     if (node.itemSpacing) lines.push(`gap: ${node.itemSpacing}px;`);
-    if (node.layoutWrap === "WRAP") lines.push(`flex-wrap: wrap;`);
+    if (node.layoutWrap === "WRAP") {
+      lines.push(`flex-wrap: wrap;`);
+      if (node.counterAxisSpacing != null && node.counterAxisSpacing !== node.itemSpacing) {
+        lines.push(`row-gap: ${node.counterAxisSpacing}px;`);
+      }
+      if (node.counterAxisAlignContent && node.counterAxisAlignContent !== "AUTO") {
+        const contentMap: Record<string, string> = {
+          CENTER: "center",
+          FLEX_END: "flex-end",
+          SPACE_BETWEEN: "space-between",
+          SPACE_AROUND: "space-around",
+          SPACE_EVENLY: "space-evenly",
+          STRETCH: "stretch",
+        };
+        const val = contentMap[node.counterAxisAlignContent];
+        if (val) lines.push(`align-content: ${val};`);
+      }
+    }
     appendFlexAlignment(lines, node);
   } else if (node.layoutMode === "VERTICAL") {
     lines.push(`display: flex;`);
     lines.push(`flex-direction: column;`);
     if (node.itemSpacing) lines.push(`gap: ${node.itemSpacing}px;`);
-    if (node.layoutWrap === "WRAP") lines.push(`flex-wrap: wrap;`);
+    if (node.layoutWrap === "WRAP") {
+      lines.push(`flex-wrap: wrap;`);
+      if (node.counterAxisSpacing != null && node.counterAxisSpacing !== node.itemSpacing) {
+        lines.push(`column-gap: ${node.counterAxisSpacing}px;`);
+      }
+      if (node.counterAxisAlignContent && node.counterAxisAlignContent !== "AUTO") {
+        const contentMap: Record<string, string> = {
+          CENTER: "center",
+          FLEX_END: "flex-end",
+          SPACE_BETWEEN: "space-between",
+          SPACE_AROUND: "space-around",
+          SPACE_EVENLY: "space-evenly",
+          STRETCH: "stretch",
+        };
+        const val = contentMap[node.counterAxisAlignContent];
+        if (val) lines.push(`align-content: ${val};`);
+      }
+    }
     appendFlexAlignment(lines, node);
   }
 
@@ -335,13 +403,19 @@ export function nodeToCSS(node: any, parentBBox?: { x: number; y: number }): str
     }
   }
 
+  // Aspect ratio for image nodes
+  if (imgFill && bbox && bbox.width && bbox.height) {
+    const ratio = Math.round((bbox.width / bbox.height) * 100) / 100;
+    lines.push(`aspect-ratio: ${ratio};`);
+  }
+
   if (node.type === "TEXT" && node.style) {
     const s = node.style;
     if (s.fontFamily) lines.push(`font-family: "${s.fontFamily}";`);
     if (s.fontSize) lines.push(`font-size: ${s.fontSize}px;`);
     if (s.fontWeight) lines.push(`font-weight: ${s.fontWeight};`);
-    if (s.lineHeightPx) lines.push(`line-height: ${s.lineHeightPx}px;`);
-    if (s.letterSpacing) lines.push(`letter-spacing: ${s.letterSpacing}px;`);
+    if (s.lineHeightPx || pp) lines.push(`line-height: ${s.lineHeightPx || s.fontSize * 1.2}px;`);
+    if (s.letterSpacing || pp) lines.push(`letter-spacing: ${s.letterSpacing || 0}px;`);
     if (s.textAlignHorizontal) lines.push(`text-align: ${s.textAlignHorizontal.toLowerCase()};`);
 
     // Text decoration
@@ -378,37 +452,52 @@ export function nodeToCSSRecursive(
   node: any,
   depth: number = 0,
   maxDepth: number = 8,
-  parentBBox?: { x: number; y: number }
+  parentBBox?: { x: number; y: number },
+  options?: CSSGenOptions
 ): string {
   if (!node || depth > maxDepth) return "";
   if (node.visible === false) return "";
 
-  let output = nodeToCSS(node, parentBBox) + "\n\n";
+  let output = nodeToCSS(node, parentBBox, options) + "\n\n";
 
   const myBBox = node.absoluteBoundingBox;
   if (node.children) {
+    const absoluteChildren = node.children.filter(
+      (c: any) => c.layoutPositioning === "ABSOLUTE" && c.visible !== false
+    );
+    const hasMultipleAbsolute = absoluteChildren.length > 1;
+
     for (const child of node.children) {
       if (child.visible === false) continue;
-      output += nodeToCSSRecursive(child, depth + 1, maxDepth, myBBox);
+      let childOptions = options;
+      if (hasMultipleAbsolute && child.layoutPositioning === "ABSOLUTE") {
+        childOptions = { ...options, zIndex: absoluteChildren.indexOf(child) + 1 };
+      }
+      output += nodeToCSSRecursive(child, depth + 1, maxDepth, myBBox, childOptions);
     }
   }
 
   return output;
 }
 
-export function nodeToTailwind(node: any, parentBBox?: { x: number; y: number }): string {
+export function nodeToTailwind(node: any, parentBBox?: { x: number; y: number }, options?: CSSGenOptions): string {
   const classes: string[] = [];
   const bbox = node.absoluteBoundingBox;
+  const pp = options?.precision === "pixel-perfect";
+  const round = (v: number) => (pp ? Math.round(v * 10) / 10 : Math.round(v));
 
   // Positioning
   if (node.layoutPositioning === "ABSOLUTE") {
     classes.push("absolute");
+    if (options?.zIndex != null) {
+      classes.push(`z-[${options.zIndex}]`);
+    }
     if (bbox && parentBBox) {
-      classes.push(`left-[${Math.round(bbox.x - parentBBox.x)}px]`);
-      classes.push(`top-[${Math.round(bbox.y - parentBBox.y)}px]`);
+      classes.push(`left-[${round(bbox.x - parentBBox.x)}px]`);
+      classes.push(`top-[${round(bbox.y - parentBBox.y)}px]`);
     } else if (bbox) {
-      classes.push(`left-[${Math.round(bbox.x)}px]`);
-      classes.push(`top-[${Math.round(bbox.y)}px]`);
+      classes.push(`left-[${round(bbox.x)}px]`);
+      classes.push(`top-[${round(bbox.y)}px]`);
     }
   } else if (node.children?.some((c: any) => c.layoutPositioning === "ABSOLUTE")) {
     classes.push("relative");
@@ -421,14 +510,14 @@ export function nodeToTailwind(node: any, parentBBox?: { x: number; y: number })
     } else if (node.layoutSizingHorizontal === "HUG") {
       classes.push("w-fit");
     } else {
-      classes.push(`w-[${Math.round(bbox.width)}px]`);
+      classes.push(`w-[${round(bbox.width)}px]`);
     }
     if (node.layoutSizingVertical === "FILL") {
       classes.push("self-stretch");
     } else if (node.layoutSizingVertical === "HUG") {
       classes.push("h-fit");
     } else {
-      classes.push(`h-[${Math.round(bbox.height)}px]`);
+      classes.push(`h-[${round(bbox.height)}px]`);
     }
   }
 
@@ -448,7 +537,10 @@ export function nodeToTailwind(node: any, parentBBox?: { x: number; y: number })
   const solidFills = fills.filter((f: any) => f.type === "SOLID");
   const gradientFills = fills.filter((f: any) => f.type?.startsWith("GRADIENT_"));
 
-  if (gradientFills.length > 0) {
+  const tokenBgTw = resolveColorToken(node, "fills", options);
+  if (tokenBgTw) {
+    classes.push(`bg-[${tokenBgTw}]`);
+  } else if (gradientFills.length > 0) {
     const g = gradientToCSS(gradientFills[0]);
     if (g) classes.push(`bg-[${g.replace(/\s+/g, "_")}]`);
   } else if (solidFills.length > 0 && solidFills[0].color) {
@@ -471,12 +563,46 @@ export function nodeToTailwind(node: any, parentBBox?: { x: number; y: number })
   if (node.layoutMode === "HORIZONTAL") {
     classes.push("flex", "flex-row");
     if (node.itemSpacing) classes.push(`gap-[${node.itemSpacing}px]`);
-    if (node.layoutWrap === "WRAP") classes.push("flex-wrap");
+    if (node.layoutWrap === "WRAP") {
+      classes.push("flex-wrap");
+      if (node.counterAxisSpacing != null && node.counterAxisSpacing !== node.itemSpacing) {
+        classes.push(`gap-y-[${node.counterAxisSpacing}px]`);
+      }
+      if (node.counterAxisAlignContent && node.counterAxisAlignContent !== "AUTO") {
+        const contentMap: Record<string, string> = {
+          CENTER: "content-center",
+          FLEX_END: "content-end",
+          SPACE_BETWEEN: "content-between",
+          SPACE_AROUND: "content-around",
+          SPACE_EVENLY: "content-evenly",
+          STRETCH: "content-stretch",
+        };
+        const cls = contentMap[node.counterAxisAlignContent];
+        if (cls) classes.push(cls);
+      }
+    }
     appendTailwindAlignment(classes, node);
   } else if (node.layoutMode === "VERTICAL") {
     classes.push("flex", "flex-col");
     if (node.itemSpacing) classes.push(`gap-[${node.itemSpacing}px]`);
-    if (node.layoutWrap === "WRAP") classes.push("flex-wrap");
+    if (node.layoutWrap === "WRAP") {
+      classes.push("flex-wrap");
+      if (node.counterAxisSpacing != null && node.counterAxisSpacing !== node.itemSpacing) {
+        classes.push(`gap-x-[${node.counterAxisSpacing}px]`);
+      }
+      if (node.counterAxisAlignContent && node.counterAxisAlignContent !== "AUTO") {
+        const contentMap: Record<string, string> = {
+          CENTER: "content-center",
+          FLEX_END: "content-end",
+          SPACE_BETWEEN: "content-between",
+          SPACE_AROUND: "content-around",
+          SPACE_EVENLY: "content-evenly",
+          STRETCH: "content-stretch",
+        };
+        const cls = contentMap[node.counterAxisAlignContent];
+        if (cls) classes.push(cls);
+      }
+    }
     appendTailwindAlignment(classes, node);
   }
 
@@ -557,21 +683,32 @@ export function nodeToTailwind(node: any, parentBBox?: { x: number; y: number })
     else if (fit === "contain") classes.push("object-contain");
   }
 
+  // Aspect ratio for image nodes
+  if (imgFillTw && bbox && bbox.width && bbox.height) {
+    const ratio = Math.round((bbox.width / bbox.height) * 100) / 100;
+    classes.push(`aspect-[${ratio}]`);
+  }
+
   // Text
   if (node.type === "TEXT" && node.style) {
     const s = node.style;
     if (s.fontFamily) classes.push(`font-['${s.fontFamily.replace(/\s+/g, "_")}']`);
     if (s.fontSize) classes.push(`text-[${s.fontSize}px]`);
     if (s.fontWeight && s.fontWeight !== 400) classes.push(`font-[${s.fontWeight}]`);
-    if (s.lineHeightPx) classes.push(`leading-[${s.lineHeightPx}px]`);
-    if (s.letterSpacing) classes.push(`tracking-[${s.letterSpacing}px]`);
+    if (s.lineHeightPx || pp) classes.push(`leading-[${s.lineHeightPx || s.fontSize * 1.2}px]`);
+    if (s.letterSpacing || pp) classes.push(`tracking-[${s.letterSpacing || 0}px]`);
     if (s.textAlignHorizontal === "CENTER") classes.push("text-center");
     else if (s.textAlignHorizontal === "RIGHT") classes.push("text-right");
     else if (s.textAlignHorizontal === "JUSTIFIED") classes.push("text-justify");
 
-    const textFills = (node.fills || []).filter((f: any) => f.visible !== false && f.type === "SOLID");
-    if (textFills.length > 0 && textFills[0].color) {
-      classes.push(`text-[#${rgbToHex(textFills[0].color)}]`);
+    const textTokenColor = resolveColorToken(node, "fills", options);
+    if (textTokenColor) {
+      classes.push(`text-[${textTokenColor}]`);
+    } else {
+      const textFills = (node.fills || []).filter((f: any) => f.visible !== false && f.type === "SOLID");
+      if (textFills.length > 0 && textFills[0].color) {
+        classes.push(`text-[#${rgbToHex(textFills[0].color)}]`);
+      }
     }
 
     // Text decoration
@@ -661,13 +798,14 @@ export function nodeToTailwindRecursive(
   node: any,
   depth: number = 0,
   maxDepth: number = 8,
-  parentBBox?: { x: number; y: number }
+  parentBBox?: { x: number; y: number },
+  options?: CSSGenOptions
 ): string {
   if (!node || depth > maxDepth) return "";
   if (node.visible === false) return "";
 
   const indent = "  ".repeat(depth);
-  const classes = nodeToTailwind(node, parentBBox);
+  const classes = nodeToTailwind(node, parentBBox, options);
   const semantic = inferSemanticRole(node);
   const tag = semantic?.html || "div";
 
@@ -684,10 +822,17 @@ export function nodeToTailwindRecursive(
   }
 
   const myBBox = node.absoluteBoundingBox;
+  const absoluteChildren = node.children.filter((c: any) => c.layoutPositioning === "ABSOLUTE" && c.visible !== false);
+  const hasMultipleAbsolute = absoluteChildren.length > 1;
+
   output += `>\n`;
   for (const child of node.children) {
     if (child.visible === false) continue;
-    output += nodeToTailwindRecursive(child, depth + 1, maxDepth, myBBox);
+    let childOptions = options;
+    if (hasMultipleAbsolute && child.layoutPositioning === "ABSOLUTE") {
+      childOptions = { ...options, zIndex: absoluteChildren.indexOf(child) + 1 };
+    }
+    output += nodeToTailwindRecursive(child, depth + 1, maxDepth, myBBox, childOptions);
   }
   output += `${indent}</${tag}>\n`;
 
