@@ -70,11 +70,11 @@ function copySkills(projectRoot: string): string[] {
   }
 
   const files = [
+    "gen-ui.md",
     "gen-app.md",
     "gen-component.md",
     "gen-page.md",
     "gen-pixel-perfect.md",
-    "sync-tokens.md",
     "tweak-style.md",
   ];
 
@@ -143,10 +143,10 @@ figma-code-context init - 安装 Figma Code Context skills 到当前项目
   }
 
   console.log(`\n完成! 在 Claude Code 中使用:`);
+  console.log(`  /figma:gen-ui <figma-url>              (通用入口，自动选择粒度)`);
   console.log(`  /figma:gen-app <figma-file-url>        (一键生成完整应用)`);
   console.log(`  /figma:gen-component <figma-url>`);
   console.log(`  /figma:gen-page <figma-url>`);
   console.log(`  /figma:gen-pixel-perfect <figma-url>`);
-  console.log(`  /figma:tweak-style <figma-url>`);
-  console.log(`  /figma:sync-tokens <figma-url>\n`);
+  console.log(`  /figma:tweak-style <figma-url>\n`);
 }
