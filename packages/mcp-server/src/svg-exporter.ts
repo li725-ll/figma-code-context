@@ -280,7 +280,7 @@ export class SvgExporter {
         const filePath = this.tempManager.writeSvg(filename, svgContent);
 
         results.set(nodeInfo.id, {
-          path: filePath,
+          path: filePath || filename,
           content: svgContent,
           filename,
           inline: svgContent.length <= MAX_INLINE_SIZE,
