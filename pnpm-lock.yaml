@@ -94,12 +94,6 @@ importers:
 
   packages/mcp-server:
     dependencies:
-      '@figma/client':
-        specifier: workspace:*
-        version: link:../client
-      '@figma/core':
-        specifier: workspace:*
-        version: link:../core
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.29.0(zod@4.4.3)
@@ -107,6 +101,12 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@figma/client':
+        specifier: workspace:*
+        version: link:../client
+      '@figma/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.19

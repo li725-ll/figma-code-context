@@ -45,15 +45,19 @@ export class TempManager {
   }
 
   init(): void {
-    fs.mkdirSync(this.sessionDir, { recursive: true });
-    fs.mkdirSync(this.svgDir, { recursive: true });
-    fs.mkdirSync(path.join(this.sessionDir, "icons"), { recursive: true });
-    fs.mkdirSync(this.cacheDir, { recursive: true });
-    fs.mkdirSync(this.logsDir, { recursive: true });
-    if (!fs.existsSync(this.iconsIndexPath)) {
-      fs.writeFileSync(this.iconsIndexPath, JSON.stringify({ icons: [] }, null, 2), "utf-8");
+    try {
+      fs.mkdirSync(this.sessionDir, { recursive: true });
+      fs.mkdirSync(this.svgDir, { recursive: true });
+      fs.mkdirSync(path.join(this.sessionDir, "icons"), { recursive: true });
+      fs.mkdirSync(this.cacheDir, { recursive: true });
+      fs.mkdirSync(this.logsDir, { recursive: true });
+      if (!fs.existsSync(this.iconsIndexPath)) {
+        fs.writeFileSync(this.iconsIndexPath, JSON.stringify({ icons: [] }, null, 2), "utf-8");
+      }
+      this._cleanOldSessions(24 * 60 * 60 * 1000);
+    } catch (err) {
+      process.stderr.write(`[figma-code-context] Warning: failed to initialize temp directories: ${err}\n`);
     }
-    this._cleanOldSessions(24 * 60 * 60 * 1000);
   }
 
   private _cleanOldSessions(maxAge: number): void {
