@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "description": "MCP server that transforms Figma API data into AI-friendly formats for LLM code generation",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/li725-ll/figma-code-context.git"
+  },
+  "homepage": "https://github.com/li725-ll/figma-code-context",
+  "bugs": {
+    "url": "https://github.com/li725-ll/figma-code-context/issues"
+  },
   "packageManager": "pnpm@10.33.4",
   "scripts": {
     "build": "turbo build",
