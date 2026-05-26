@@ -1,6 +1,6 @@
 {
   "name": "figma-code-context",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "private": false,
   "type": "module",
   "description": "MCP server that transforms Figma API data into AI-friendly formats for LLM code generation",

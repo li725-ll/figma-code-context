@@ -1,5 +1,12 @@
 # figma-code-context
 
+## 1.5.4
+
+### Patch Changes
+
+- Enhance CSS/Tailwind generation: precision modes, token/variable resolution, z-index, aspect-ratio, counterAxisSpacing
+- Improve MCP tool descriptions with workflow guidance (when to use, alternatives)
+
 ## 1.5.3
 
 ### Minor Changes
