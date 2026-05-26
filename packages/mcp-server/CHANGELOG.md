@@ -1,5 +1,14 @@
 # figma-code-context
 
+## 1.5.5
+
+### Patch Changes
+
+- Adaptive pixel-perfect refinement: MVU-based top-to-bottom workflow with precision decision matrix
+- Add depth parameter to get_node_css for deep component refinement
+- Add includeCSS to get_component_variants for state/variant CSS diff output
+- Support IMAGE fill type in CSS generation (background-image with scaleMode mapping)
+
 ## 1.5.4
 
 ### Patch Changes
