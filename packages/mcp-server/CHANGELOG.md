@@ -1,5 +1,11 @@
 # figma-code-context
 
+## 1.5.6
+
+### Patch Changes
+
+- Redesign TempManager: stable user-level storage (~/.figma-code-context/), per-project cache isolation, session-scoped SVG/icons, fault-tolerant writes
+
 ## 1.5.5
 
 ### Patch Changes
