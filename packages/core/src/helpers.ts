@@ -390,16 +390,13 @@ export function nodeToCSS(node: any, parentBBox?: { x: number; y: number }, opti
     lines.push(`mix-blend-mode: ${node.blendMode.toLowerCase().replace(/_/g, "-")};`);
   }
 
-  // Image scaleMode → object-fit
+  // Image scaleMode → object-fit (for img elements)
   const imgFill = (node.fills || []).find((f: any) => f.type === "IMAGE" && f.visible !== false);
   if (imgFill && (imgFill as any).scaleMode) {
-    const scaleMap: Record<string, string> = { FILL: "cover", FIT: "contain", CROP: "cover", TILE: "repeat" };
-    const fit = scaleMap[(imgFill as any).scaleMode] || "cover";
-    if (fit !== "repeat") {
-      lines.push(`object-fit: ${fit};`);
-    } else {
-      lines.push(`background-size: auto;`);
-      lines.push(`background-repeat: repeat;`);
+    const scaleMode = (imgFill as any).scaleMode;
+    if (scaleMode !== "TILE") {
+      const scaleMap: Record<string, string> = { FILL: "cover", FIT: "contain", CROP: "cover" };
+      lines.push(`object-fit: ${scaleMap[scaleMode] || "cover"};`);
     }
   }
 
@@ -674,13 +671,19 @@ export function nodeToTailwind(node: any, parentBBox?: { x: number; y: number },
     classes.push(`mix-blend-${node.blendMode.toLowerCase().replace(/_/g, "-")}`);
   }
 
-  // Image scaleMode → object-fit
+  // Image scaleMode → object-fit / background classes
   const imgFillTw = (node.fills || []).find((f: any) => f.type === "IMAGE" && f.visible !== false);
   if (imgFillTw && (imgFillTw as any).scaleMode) {
-    const scaleMap: Record<string, string> = { FILL: "cover", FIT: "contain", CROP: "cover", TILE: "repeat" };
-    const fit = scaleMap[(imgFillTw as any).scaleMode] || "cover";
-    if (fit === "cover") classes.push("object-cover");
-    else if (fit === "contain") classes.push("object-contain");
+    const scaleMode = (imgFillTw as any).scaleMode;
+    if (scaleMode === "FILL") {
+      classes.push("object-cover", "bg-cover", "bg-center");
+    } else if (scaleMode === "FIT") {
+      classes.push("object-contain", "bg-contain", "bg-center", "bg-no-repeat");
+    } else if (scaleMode === "CROP") {
+      classes.push("object-cover", "bg-cover", "bg-center");
+    } else if (scaleMode === "TILE") {
+      classes.push("bg-repeat");
+    }
   }
 
   // Aspect ratio for image nodes

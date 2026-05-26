@@ -271,34 +271,110 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 ## 阶段 5：精修闭环（Round 4）
 
 目标：像素级精确，资源完整，最终交付。
-精度：**最高** — 使用 pixel-perfect 模式获取完整属性，包括富文本段落样式。
+核心原则：**自适应精度，以最小可视单位（MVU）为工作粒度，自上而下逐一校验，确保每个组件每个像素完整还原。**
 
-### 5.1 Pixel-Perfect 校验
+### 5.1 全局评估与区块枚举
 
-对每个页面和关键组件执行：
+对每个页面执行：
 
-1. 调用 `get_node_css`（precision: "pixel-perfect", recursive: true）
-2. 调用 `get_node`（format: "json", precision: "pixel-perfect", depth: 15）获取完整原始数据（含 richtext 段落信息）
-3. 逐属性对比生成代码 vs 设计稿：
-   - 颜色值是否完全一致？
-   - 间距是否精确到 px？
-   - 字体属性是否完整？
-   - 布局行为是否正确（flex 方向、对齐、sizing 策略）？
-   - 圆角是否四角独立且精确？
-   - 阴影参数是否完整？
-   - 富文本是否正确分段渲染（不同样式的 span）？
-4. 发现偏差 → 自动修复（只改有偏差的属性，不动其他代码）
-5. 修复后重新校验
-6. 最多 3 轮，仍有偏差则记录到报告
+1. 调用 `get_node`（format: "condensed", depth: 3）获取页面结构概览
+2. 识别页面中的**最小可视单位（MVU）**：
+   - 独立 UI 组件：Button, Card, NavItem, Input, Badge, Avatar
+   - 内容区块：Hero Section, Feature Grid, Sidebar, Footer
+   - 判断标准：用户能独立感知的最小视觉单元
+3. 按从上到下顺序建立校验清单，记录每个 MVU 的 nodeId
 
-### 5.2 资源完整性检查
+```
+📋 精修清单（PageName）：
+├─ 1. Header (id: 12:345) — 简单，depth:6
+├─ 2. Hero Section (id: 12:400) — 中等，depth:8
+├─ 3. Feature Cards (id: 12:500) — 复杂，需拆分
+├─ 4. Testimonials (id: 12:600) — 中等，depth:8
+├─ 5. Footer (id: 12:700) — 简单，depth:6
+└─ 总计 5 个 MVU
+```
 
-- 所有 imageRef 节点是否有对应的图片文件？
-- 所有矢量图标是否已导出为 SVG 并正确引用？
-- 图片 URL 是否可访问？
-- 缺失的资源 → 重新导出
+### 5.2 精度决策
 
-### 5.3 最终全量验证
+根据 MVU 复杂度选择工具参数：
+
+| MVU 类型                       | 子节点数 | 嵌套层级 | 工具调用                                                 |
+| ------------------------------ | -------- | -------- | -------------------------------------------------------- |
+| 简单（Button, Badge, Avatar）  | <5       | <3       | `get_node_css(recursive, depth:4, pixel-perfect)`        |
+| 中等（Card, ListItem, NavBar） | 5-20     | 3-6      | `get_node_css(recursive, depth:8, pixel-perfect)`        |
+| 复杂（Form, Table, Grid）      | 20-50    | 6+       | 先 `get_node(condensed, depth:2)` 枚举子单元，再逐一处理 |
+| 超大（Dashboard, 长列表）      | 50+      | 8+       | 拆分为多个 MVU，递归本流程                               |
+
+**严禁对整页调用 pixel-perfect。必须先枚举区块再逐一获取。**
+
+### 5.3 逐单元校验循环
+
+对校验清单中的每个 MVU，严格按顺序执行：
+
+**A. 获取设计数据**
+
+根据精度决策调用对应工具。如需完整原始属性（富文本段落样式等），追加：
+
+- `get_node`（format: "json", precision: "pixel-perfect", depth: 15）
+
+**B. 逐属性对比**
+
+将获取的设计数据与已生成代码逐一对比：
+
+- 颜色值是否完全一致？（hex/rgba/token）
+- 间距是否精确到 px？（padding/margin/gap）
+- 字体属性是否完整？（family/size/weight/line-height/letter-spacing）
+- 布局行为是否正确？（flex 方向、对齐、sizing 策略、wrap）
+- 圆角是否四角独立且精确？
+- 阴影参数是否完整？（x/y/blur/spread/color）
+- 边框是否正确？（宽度/颜色/样式/strokeAlign）
+- 图片是否填充？（background-image URL、background-size/position）
+- 尺寸约束是否正确？（min/max-width/height、固定尺寸 vs 自适应）
+- opacity、overflow、z-index 是否正确？
+- 富文本是否正确分段渲染？（不同样式的 span）
+
+**C. 修复**
+
+- 发现偏差 → 只改有偏差的属性，不动其他代码
+- 修复后重新获取该 MVU 数据验证
+- 最多 3 轮
+
+**D. 标记进度**
+
+- ✅ 通过 → 进入下一个 MVU
+- ⚠️ 3 轮未通过 → 记录具体偏差，继续下一个
+
+**E. 自动缩小范围**
+
+如果对比中发现某个子区域偏差集中（>3 个属性偏差），对该子区域单独获取更高精度数据重新校验，而非反复修整个 MVU。
+
+### 5.4 状态变体校验
+
+对有多状态的组件（按钮、输入框、选项卡、开关等）：
+
+1. 调用 `get_component_variants`（includeCSS: true）获取各状态的样式差异
+2. 确认生成代码中每个状态都有对应的样式规则：
+   - hover → `:hover` 或 `hover:` (Tailwind)
+   - selected/active → `[data-selected]` / `aria-selected` / `:active`
+   - disabled → `:disabled` / `[aria-disabled]`
+   - focus → `:focus-visible`
+3. 逐状态对比差异 CSS 是否已正确实现
+4. 缺失的状态样式 → 补充实现
+
+### 5.5 图片资源校验
+
+对所有含 IMAGE fill 的节点：
+
+1. 确认 CSS 中有 `background-image: url(...)` 或对应的 `<img src="...">`
+2. 对缺失图片 URL 的节点，调用 `get_images` 获取真实下载 URL
+3. 替换代码中的 imageRef 占位符为真实 URL 或本地资源路径
+4. 确认 background-size/position 与 Figma scaleMode 一致：
+   - FILL → `background-size: cover; background-position: center;`
+   - FIT → `background-size: contain; background-position: center;`
+   - TILE → `background-repeat: repeat;`
+5. 对矢量图标确认已通过 `export_svg` 导出并正确引用
+
+### 5.6 最终全量验证
 
 ```
 最终验证清单：
@@ -307,13 +383,14 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 - [ ] lint 通过（如有配置）
 - [ ] 所有路由可访问
 - [ ] 所有组件 import 链完整
-- [ ] 所有图片/图标资源存在
+- [ ] 所有图片/图标资源存在且正确引用
+- [ ] 所有组件状态样式完整（hover/selected/disabled）
 - [ ] 无 console.error / 未处理的 Promise
 
 发现问题 → 定位原因 → 修复 → 重新验证
 ```
 
-### 5.4 输出最终报告
+### 5.7 输出最终报告
 
 ```
 ✅ 生成完成！
@@ -329,6 +406,14 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 ├─ /products → 产品列表
 ├─ /products/:id → 产品详情
 └─ ...
+
+🔍 精修结果：
+├─ 总 MVU 数: N
+├─ 通过: N ✅
+├─ 有残留偏差: N ⚠️
+└─ 偏差详情（如有）：
+    ├─ [组件名] - 具体偏差描述
+    └─ ...
 
 ⚠️ 已知限制（如有）：
 ├─ [组件名] - 原因
@@ -361,4 +446,5 @@ description: 从 Figma 文件一键生成完整应用（所有页面、组件、
 - 始终使用 `condensed` 格式（节省 60%+ token），仅在阶段 5 精修时用 pixel-perfect
 - 超过 20 个页面 → 分批处理（每批 5 个页面）
 - 大型页面（节点 > 200）→ 分区块获取，逐区块生成
+- **阶段 5 精修：严禁对整页调用 pixel-perfect，必须先枚举区块再逐一获取**
 - 组件依赖图和执行计划始终保留在上下文中

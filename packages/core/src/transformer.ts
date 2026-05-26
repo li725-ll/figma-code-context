@@ -828,6 +828,24 @@ export function fillsToCSS(fills: FigmaFill[] | undefined): Record<string, strin
       if (g) {
         backgrounds.push(g);
       }
+    } else if (fill.type === "IMAGE" && (fill as any).imageRef) {
+      const ref = (fill as any).imageRef;
+      const scaleMode = (fill as any).scaleMode || "FILL";
+      backgrounds.push(`url(<${ref}>)`);
+      if (scaleMode === "FILL") {
+        css["background-size"] = "cover";
+        css["background-position"] = "center";
+      } else if (scaleMode === "FIT") {
+        css["background-size"] = "contain";
+        css["background-position"] = "center";
+        css["background-repeat"] = "no-repeat";
+      } else if (scaleMode === "TILE") {
+        css["background-size"] = "auto";
+        css["background-repeat"] = "repeat";
+      } else {
+        css["background-size"] = "cover";
+        css["background-position"] = "center";
+      }
     }
   }
 

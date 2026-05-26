@@ -230,7 +230,7 @@ if (args[0] === "init") {
     "get_node",
     {
       description:
-        "获取指定节点的 AI 友好数据，支持 JSON 和压缩文本两种格式。condensed 格式受 maxTokens 预算控制（默认 4000），推荐用于结构探索和代码生成。json 格式无预算限制，可能返回大量数据，仅在需要完整原始属性时使用",
+        "获取指定节点的 AI 友好数据，支持 JSON 和压缩文本两种格式。condensed 格式受 maxTokens 预算控制（默认 4000），推荐用于结构探索和代码生成。json 格式无预算限制，可能返回大量数据，仅在需要完整原始属性时使用。提示：depth:2-3 + condensed 可快速枚举页面顶层区块（含 nodeId），用于精修阶段决定工作粒度",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
         nodeId: z.string().describe("节点 ID，格式如 '312:33667' 或 '312-33667'"),
@@ -440,13 +440,15 @@ if (args[0] === "init") {
   server.registerTool(
     "get_component_variants",
     {
-      description: "获取 COMPONENT_SET 下所有 variant 及其属性组合，对生成组件 props 接口非常有帮助",
+      description:
+        "获取 COMPONENT_SET 下所有 variant 及其属性组合，对生成组件 props 接口非常有帮助。设置 includeCSS:true 可获取各变体间的样式差异，用于生成状态相关的 CSS（:hover, :active, [data-selected] 等）",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
         nodeId: z.string().describe("COMPONENT_SET 的节点 ID"),
+        includeCSS: z.boolean().optional().default(false).describe("是否输出各变体的 CSS 差异（以第一个变体为基准）"),
       },
     },
-    async ({ fileKey, nodeId }) => {
+    async ({ fileKey, nodeId, includeCSS }) => {
       try {
         const normalizedId = nodeId.replace(/-/g, ":");
         const data = (await figma.getFileNodes(fileKey, [normalizedId])) as any;
@@ -468,7 +470,7 @@ if (args[0] === "init") {
         }
 
         const properties: Record<string, Set<string>> = {};
-        const variants: Array<{ name: string; id: string; props: Record<string, string> }> = [];
+        const variants: Array<{ name: string; id: string; props: Record<string, string>; node: any }> = [];
 
         for (const child of node.children || []) {
           if (child.type !== "COMPONENT") continue;
@@ -482,7 +484,7 @@ if (args[0] === "init") {
               properties[key].add(value);
             }
           }
-          variants.push({ name: child.name, id: child.id, props });
+          variants.push({ name: child.name, id: child.id, props, node: child });
         }
 
         const output: string[] = [`# ${node.name}`, ``, `## 属性定义`];
@@ -497,6 +499,42 @@ if (args[0] === "init") {
             .map(([k, val]) => `${k}=${val}`)
             .join(", ");
           output.push(`- ${propsStr} (id: ${v.id})`);
+        }
+
+        if (includeCSS && variants.length > 0) {
+          output.push(``, `## CSS 差异`);
+          const baseCSS = nodeToCSS(variants[0].node);
+          output.push(``, `### 基准: ${variants[0].name}`);
+          output.push("```css");
+          output.push(baseCSS);
+          output.push("```");
+
+          const baseLines = new Set(
+            baseCSS
+              .split("\n")
+              .map((l) => l.trim())
+              .filter(Boolean)
+          );
+
+          for (let i = 1; i < variants.length; i++) {
+            const variantCSS = nodeToCSS(variants[i].node);
+            const variantLines = variantCSS
+              .split("\n")
+              .map((l) => l.trim())
+              .filter(Boolean);
+            const diff = variantLines.filter(
+              (l) => !baseLines.has(l) && !l.startsWith("/*") && !l.startsWith(".") && l !== "}"
+            );
+            if (diff.length > 0) {
+              output.push(``, `### 差异: ${variants[i].name}`);
+              output.push("```css");
+              output.push(diff.join("\n"));
+              output.push("```");
+            } else {
+              output.push(``, `### 差异: ${variants[i].name}`);
+              output.push("（与基准相同）");
+            }
+          }
         }
 
         return {
@@ -620,7 +658,7 @@ if (args[0] === "init") {
     "get_node_css",
     {
       description:
-        "将节点转换为 CSS 或 Tailwind 类名，支持递归生成整个组件树的样式。适用于样式精修阶段（结构代码已生成后）。初始代码生成阶段优先使用 get_node(condensed) 获取结构",
+        "将节点转换为 CSS 或 Tailwind 类名，支持递归生成整个组件树的样式。适用于样式精修阶段（结构代码已生成后）。像素级精修时以最小可视单位（单个组件/区块）为粒度调用，先用 get_node(condensed, depth:2-3) 评估复杂度再决定 depth 参数",
       inputSchema: {
         fileKey: z.string().describe("Figma 文件 Key"),
         nodeId: z.string().describe("节点 ID"),
@@ -630,6 +668,7 @@ if (args[0] === "init") {
           .default("css")
           .describe("输出模式：css（标准 CSS）或 tailwind（Tailwind 类名）"),
         recursive: z.boolean().optional().default(false).describe("是否递归生成子节点样式，默认 false"),
+        depth: z.number().optional().default(8).describe("递归深度限制，默认 8。像素级精修深层嵌套组件时可设为 12-15"),
         precision: z
           .enum(["standard", "pixel-perfect"])
           .optional()
@@ -637,7 +676,7 @@ if (args[0] === "init") {
           .describe("精度模式：pixel-perfect 时输出包含 position、overflow、flex 子属性、text 截断等完整 CSS"),
       },
     },
-    async ({ fileKey, nodeId, mode, recursive, precision }) => {
+    async ({ fileKey, nodeId, mode, recursive, depth, precision }) => {
       try {
         const normalizedId = nodeId.replace(/-/g, ":");
         const data = (await figma.getFileNodes(fileKey, [normalizedId])) as any;
@@ -661,11 +700,11 @@ if (args[0] === "init") {
         let output: string;
         if (mode === "tailwind") {
           output = recursive
-            ? nodeToTailwindRecursive(nodeData.document, 0, 8, undefined, options)
+            ? nodeToTailwindRecursive(nodeData.document, 0, depth, undefined, options)
             : nodeToTailwind(nodeData.document, undefined, options);
         } else {
           output = recursive
-            ? nodeToCSSRecursive(nodeData.document, 0, 8, undefined, options)
+            ? nodeToCSSRecursive(nodeData.document, 0, depth, undefined, options)
             : nodeToCSS(nodeData.document, undefined, options);
         }
 
