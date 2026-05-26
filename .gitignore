@@ -6,4 +6,4 @@ dist
 .env.local
 .env*.local
 .figma-temp
-packages/mcp-server/README.md
+
